@@ -4,7 +4,7 @@ MAINTAINER snuids
 RUN apt-get update
 RUN apt-get install -y vim
 
-COPY ./requirements.txt /opt/sources/requirements.txt
+COPY ./sources/requirements.txt /opt/sources/requirements.txt
 RUN pip install -r /opt/sources/requirements.txt 
 
 COPY ./sources /opt/sources
