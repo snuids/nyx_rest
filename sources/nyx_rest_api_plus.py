@@ -515,8 +515,11 @@ class loginRest(Resource):
         #logger.info(data)
 
         if ("login" in data) and ("password" in data):
+
+            cleanlogin=data["login"].split(">")[0]
+
             try:
-                usr=es.get(index="nyx_user",doc_type="doc",id=data["login"])
+                usr=es.get(index="nyx_user",doc_type="doc",id=cleanlogin)
             except:
                 usr=None
                 logger.info("Searching by login")
@@ -526,7 +529,7 @@ class loginRest(Resource):
                                 "must": [
                                     {
                                         "query_string": {
-                                            "query": "login:"+data["login"]
+                                            "query": "login:"+cleanlogin
                                         }
                                     }
                                 ]
@@ -563,12 +566,18 @@ class loginRest(Resource):
                         conn.send_message("/topic/AUTH_SMS",json.dumps({"message":"Your access code is:"+randint,"phone":usr["_source"]["phone"]}))
                         return jsonify({'error':"DoublePhase"})
 
+                if ">" in data["login"] and "admin" in usr["_source"]["privileges"]:
+                    otheruser=data["login"].split(">")[1]
+                    try:
+                        usr=es.get(index="nyx_user",doc_type="doc",id=otheruser)
+                    except:
+                        usr=None
+                        return jsonify({'error':"Unknown User"})
+
                 token=uuid.uuid4()
                         
                 with tokenlock:
                     tokens[str(token)]=usr["_source"]       #TO BE DONE REMOVE PREVIOUS TOKENS OF THIS USER  
-
-                
 
                 usr["_source"]["password"]=""
                 usr["_source"]["id"]=data["login"]
