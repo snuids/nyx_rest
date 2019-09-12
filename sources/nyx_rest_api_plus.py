@@ -149,7 +149,6 @@ def check_pg():
             pass
 
 
-
 def get_postgres_connection():
     global pg_connection,pg_thread
     logger.info(">>> Create PG Connection")
@@ -230,11 +229,6 @@ def getUserFromToken(request):
 
     logger.error("Invalid Token:"+token)
     return None
-
-
-
-
-
 
 
 #---------------------------------------------------------------------------
