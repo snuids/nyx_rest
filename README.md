@@ -1,4 +1,9 @@
 # Nyx Rest API
+
+![badge](https://img.shields.io/badge/made%20with-python-blue.svg?style=flat-square)
+![badge](https://img.shields.io/github/languages/code-size/snuids/nyx_rest)
+![badge](https://img.shields.io/github/last-commit/snuids/nyx_rest)
+
 NYX Rest API
 
 # Run
