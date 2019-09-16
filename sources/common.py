@@ -10,6 +10,17 @@ from datetime import datetime
 from datetime import timedelta
 from elasticsearch.client import IndicesClient
 
+from cachetools import cached, LRUCache, TTLCache
+
+@cached(cache=TTLCache(maxsize=1024, ttl=300))
+def get_es_info(es):
+    print('get_es_info')
+    return es.info()
+
+
+def getELKVersion(es):
+    return int(get_es_info(es).get('version').get('number').split('.')[0])
+
 def filterReports(res,user):
     logger=logging.getLogger()
     logger.info("Filter reports")
@@ -89,6 +100,10 @@ def cleanElasticRecords(records):
 #################################################################################
 def loadData(es,conn,index,data,doc_type,download,cui,is_rest_api,user,outputformat,OUTPUT_URL,OUTPUT_FOLDER):
     logger=logging.getLogger()
+    elkversion=getELKVersion(es)
+    #if elkversion==7:
+    #    doc_type="_doc"
+
     logger.info("LOAD DATA index=%s doc_type=%s" %(index,doc_type))
 
     start=datetime.now().timestamp()
@@ -98,7 +113,7 @@ def loadData(es,conn,index,data,doc_type,download,cui,is_rest_api,user,outputfor
         del data["extra"]
 
     #res=es.search(index=index,body=json.dumps(data),doc_type=doc_type)
-
+    
     if "size" in data:
         maxsize=data["size"]
         if maxsize==0:
@@ -109,35 +124,31 @@ def loadData(es,conn,index,data,doc_type,download,cui,is_rest_api,user,outputfor
         maxsize=200
 
     logger.info (data)
-    response = es.search(
-        index=index,
-        body=json.dumps(data),
-        scroll='10m',doc_type=doc_type
-    )
 
-#    logger.info(response)
-
-
-
+    if elkversion==7:
+        response = es.search(
+            index=index,
+            body=json.dumps(data),
+            scroll='10m'
+        )
+    else:
+        response = es.search(
+            index=index,
+            body=json.dumps(data),
+            scroll='10m',doc_type=doc_type
+        )
     hits=[]
     aggs=[]
 
     total=0
-
-#    logger.info("response - "*20)
-
     if "hits" in response and "total" in response["hits"]:
-#        print(response["hits"]["total"])
-        if response["hits"]["total"] is dict:
+        if isinstance(response["hits"]["total"],dict):
             total=response["hits"]["total"]["value"]
         else:
             total=response["hits"]["total"]
 
-    #print("TOTAL=%d" %(total))
 
     while len(response['hits']['hits']):
-        # process results
-        #print(response)
         if "hits" in response and "hits" in response["hits"]:  
 #            print(len(response["hits"]["hits"]))
             hits+=response["hits"]["hits"]
@@ -153,29 +164,13 @@ def loadData(es,conn,index,data,doc_type,download,cui,is_rest_api,user,outputfor
         #print([item["_id"] for item in response["hits"]["hits"]])
         response = es.scroll(scroll_id=response['_scroll_id'], scroll='10m')
 
-    
-#    logger.info("data "*30)
 
-#    logger.info(data)
-    # if "hits" in res and "hits" in res["hits"]:
-    #     hits=res["hits"]["hits"]
-    # else:
-    #     hits=[]
-
-    # if "aggregations" in res:
-    #     aggs=res["aggregations"]
-    # else:
-    #     aggs=[]
 
     if index.find("nyx_reporttask")==0:
         hits=filterReports(hits,user)    
 
-    # logger.info("BEF "*30)
-    # logger.info(hits)
     if cui[2]!=None and cui[2]!="":
         hits=applyPrivileges(hits,user,cui[2])    
-    # logger.info("AFT "*30)
-    # logger.info(hits)
 
     
     if not download:
@@ -206,8 +201,6 @@ def loadData(es,conn,index,data,doc_type,download,cui,is_rest_api,user,outputfor
             exportcolumns=[x.strip() for x in exportcolumns.split(",")]
             logger.info(exportcolumns)
 
-    print(len(hits))
-
     cleanrecs=cleanElasticRecords({"hits":{"hits":hits}})
     
     outputname="export_"+str(uuid.uuid4())+'.'+outputformat
@@ -217,39 +210,39 @@ def loadData(es,conn,index,data,doc_type,download,cui,is_rest_api,user,outputfor
 
 ### GET MAPPING
     datescol={}
-    try:
-        containertimezone=pytz.timezone(tzlocal.get_localzone().zone)
+#     try:
+#         containertimezone=pytz.timezone(tzlocal.get_localzone().zone)
 
-        indices_client = IndicesClient(es)
-        map=indices_client.get_mapping(index=index,doc_type="doc")
-        for key in map:
-            indice=map[key]
-            if "mappings" in indice and "doc" in indice["mappings"] and "properties" in indice["mappings"]["doc"]:
-                for col in indice["mappings"]["doc"]["properties"]:
-#                    logger.info("===>"+indice["mappings"]["doc"]["properties"][col]["type"])
-                    if indice["mappings"]["doc"]["properties"][col]["type"]=="date":
-                        datescol[col]=True
+#         indices_client = IndicesClient(es)
+#         map=indices_client.get_mapping(index=index,doc_type="doc")
+#         for key in map:
+#             indice=map[key]
+#             if "mappings" in indice and "doc" in indice["mappings"] and "properties" in indice["mappings"]["doc"]:
+#                 for col in indice["mappings"]["doc"]["properties"]:
+# #                    logger.info("===>"+indice["mappings"]["doc"]["properties"][col]["type"])
+#                     if indice["mappings"]["doc"]["properties"][col]["type"]=="date":
+#                         datescol[col]=True
 
-        #print(df["DateAccident"])
-        for ind,col in enumerate(df.columns):
-            if col in datescol:
-                logger.info("Convert column:"+col)
-                logger.info("Type:"+str(df.dtypes[ind]))
-                if str(df.dtypes[ind])=="int64":
-                    #logger.info("Type:"+str(df.dtypes[ind]))
-                    df[col]=pd.to_datetime(df[col],unit='ms',utc=True).dt.tz_convert(containertimezone)
-                    mindt=pytz.utc.localize(datetime(1971, 1, 1))
-                    #logger.info(mindt)
-                    df[col]=df[col].apply(lambda x:x if x>=mindt else "")
-                    #logger.info("Type:"+str(df.dtypes[ind]))
-                else:
-                    df[col]=pd.to_datetime(df[col],utc=True).dt.tz_convert(containertimezone)
+#         #print(df["DateAccident"])
+#         for ind,col in enumerate(df.columns):
+#             if col in datescol:
+#                 logger.info("Convert column:"+col)
+#                 logger.info("Type:"+str(df.dtypes[ind]))
+#                 if str(df.dtypes[ind])=="int64":
+#                     #logger.info("Type:"+str(df.dtypes[ind]))
+#                     df[col]=pd.to_datetime(df[col],unit='ms',utc=True).dt.tz_convert(containertimezone)
+#                     mindt=pytz.utc.localize(datetime(1971, 1, 1))
+#                     #logger.info(mindt)
+#                     df[col]=df[col].apply(lambda x:x if x>=mindt else "")
+#                     #logger.info("Type:"+str(df.dtypes[ind]))
+#                 else:
+#                     df[col]=pd.to_datetime(df[col],utc=True).dt.tz_convert(containertimezone)
 
-#        logger.info(df["actualStart"])
+# #        logger.info(df["actualStart"])
 
-    except Exception as e:
-        logger.error("Unable to read mapping.",exc_info=True)
-        logger.error(e)
+#     except Exception as e:
+#         logger.error("Unable to read mapping.",exc_info=True)
+#         logger.error(e)
 
     if exportcolumns!= None:
         finalcols=[]
