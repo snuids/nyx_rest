@@ -31,16 +31,18 @@ from amqstompclient import amqstompclient
 from flask_restplus import Api, Resource, fields
 from flask import Flask, jsonify, request,Blueprint
 from logging.handlers import TimedRotatingFileHandler
-from common import loadData,applyPrivileges,kibanaData
+from common import loadData,applyPrivileges,kibanaData,getELKVersion
 from logstash_async.handler import AsynchronousLogstashHandler
 from elasticsearch import Elasticsearch as ES, RequestsHttpConnection as RC
 
 
-VERSION="2.0.7"
+VERSION="2.3.0"
 MODULE="nyx_rest"+"_"+str(os.getpid())
 
 WELCOME=os.environ["WELCOMEMESSAGE"]
 ICON=os.environ["ICON"]
+
+elkversion=6
 
 indices={}
 indices_refresh_seconds=60
@@ -314,7 +316,10 @@ def pushHistoryToELK(request,timespan,usr,token,error):
 @app.route('/api/v1/ui_css')
 def cssRest():    
     logger.info("CSS called")
-    res=es.get(index="nyx_config",id="nyx_css",doc_type="doc")    
+    if elkversion==7:
+        res=es.get(index="nyx_config",id="nyx_css")    
+    else:
+        res=es.get(index="nyx_config",id="nyx_css",doc_type="doc")    
     #header("Content-type: text/xml")
     return Response(res["_source"]["file"], mimetype='text/css')
      
@@ -393,7 +398,10 @@ class reloadConfig(Resource):
 
 def computeMenus(usr,token):
     refresh_translations()
-    res3=es.search(size=1000,index="nyx_app",doc_type="doc",body={"sort" : [{ "order" : "asc" }]})
+    if elkversion==7:
+        res3=es.search(size=1000,index="nyx_app",body={"sort" : [{ "order" : "asc" }]})
+    else:
+        res3=es.search(size=1000,index="nyx_app",doc_type="doc",body={"sort" : [{ "order" : "asc" }]})
     
     dict_dashboard=get_dict_dashboards(es)
 
@@ -427,7 +435,7 @@ def computeMenus(usr,token):
                 logger.warning('we have to update database !!!')
 
                 app_to_index = appl.copy()
-                del app_to_index['rec_id']
+                del app_to_index['rec_id']                
                 es.index(index=app['_index'], doc_type=app['_type'], id=app['_id'], body=app_to_index)
 
         if appl["category"] not in categories:
@@ -507,7 +515,10 @@ class loginRest(Resource):
             cleanlogin=data["login"].split(">")[0]
 
             try:
-                usr=es.get(index="nyx_user",doc_type="doc",id=cleanlogin)
+                if elkversion==7:
+                    usr=es.get(index="nyx_user",id=cleanlogin)
+                else:
+                    usr=es.get(index="nyx_user",doc_type="doc",id=cleanlogin)
             except:
                 usr=None
                 logger.info("Searching by login")
@@ -525,7 +536,10 @@ class loginRest(Resource):
                             }
                         }
                     }
-                users=es.search(index="nyx_user",doc_type="doc",body=body)
+                if elkversion==7:
+                    users=es.search(index="nyx_user",body=body)
+                else:
+                    users=es.search(index="nyx_user",doc_type="doc",body=body)
                 #logger.info(users)
                 if "hits" in users and "hits" in users["hits"] and len (users["hits"]["hits"])>0:
                     usr=users["hits"]["hits"][0]
@@ -557,7 +571,10 @@ class loginRest(Resource):
                 if ">" in data["login"] and "admin" in usr["_source"]["privileges"]:
                     otheruser=data["login"].split(">")[1]
                     try:
-                        usr=es.get(index="nyx_user",doc_type="doc",id=otheruser)
+                        if elkversion==7:
+                            usr=es.get(index="nyx_user",id=otheruser)
+                        else:
+                            usr=es.get(index="nyx_user",doc_type="doc",id=otheruser)
                     except:
                         usr=None
                         return jsonify({'error':"Unknown User"})
@@ -638,12 +655,18 @@ class reset_password(Resource):
         logger.info(">>> Reset password");
         req= json.loads(request.data.decode("utf-8"))  
         try:
-            usrdb=es.get(index="nyx_user",doc_type="doc",id=req["login"])
+            if elkversion==7:
+                usrdb=es.get(index="nyx_user",id=req["login"])
+            else:
+                usrdb=es.get(index="nyx_user",doc_type="doc",id=req["login"])
         except:
             return {"error":"usernotfound"}
             
         usrdb["_source"]["password"]=pbkdf2_sha256.hash(req["new_password"])
-        res=es.index(index="nyx_user",body=usrdb["_source"],doc_type="doc",id=req["login"])
+        if elkversion==7:
+            res=es.index(index="nyx_user",body=usrdb["_source"],id=req["login"])
+        else:
+            res=es.index(index="nyx_user",body=usrdb["_source"],doc_type="doc",id=req["login"])
 
         usrdb["_source"]["id"]=usrdb["_id"]
 
@@ -673,11 +696,17 @@ class change_password(Resource):
         req= json.loads(request.data.decode("utf-8"))  
         logger.info(req)
         logger.info(user)
-        usrdb=es.get(index="nyx_user",doc_type="doc",id=user["id"])
+        if elkversion==7:
+            usrdb=es.get(index="nyx_user",id=user["id"])
+        else:
+            usrdb=es.get(index="nyx_user",doc_type="doc",id=user["id"])
         if pbkdf2_sha256.verify(req["old_password"], usrdb["_source"]["password"]):
             
             usrdb["_source"]["password"]=pbkdf2_sha256.hash(req["new_password"])
-            res=es.index(index="nyx_user",body=usrdb["_source"],doc_type="doc",id=user["id"])
+            if elkversion==7:
+                res=es.index(index="nyx_user",body=usrdb["_source"],id=user["id"])
+            else:
+                res=es.index(index="nyx_user",body=usrdb["_source"],doc_type="doc",id=user["id"])
             logger.info(res)        
             return {"error":""}
         else:
@@ -776,8 +805,12 @@ class extLoadDataSource(Resource):
         end=request.args.get("end",None)
         logger.info("Data source called "+dsid+" start:"+str(start)+" end:"+str(end))
 
+        if elkversion==7:
+            ds=es.get(index="nyx_datasource",id=dsid)
+        else:
+            ds=es.get(index="nyx_datasource",doc_type="doc",id=dsid)
+            
 
-        ds=es.get(index="nyx_datasource",doc_type="doc",id=dsid)
         logger.info("QUERY TYPE# "*20)
         query=ds["_source"]["query"]
         querytype=ds["_source"].get("type","elasticsearch")
@@ -859,7 +892,7 @@ def pg_genericCRUD(index,col,pkey,user=None):
     logger.info("PG Generic Table="+index+" Col:"+col+" Pkey:"+ pkey+" Method:"+met);    
 
     if met== 'get':   
-        query="select * from "+index+ " where id="+str(pkey)
+        query="select * from "+index+ " where "+col+"="+str(pkey)
 
         description=None
         with get_postgres_connection().cursor() as cursor:
@@ -949,7 +982,10 @@ def genericCRUD(index,object,user=None):
 
     if met== 'get':        
         try:
-            ret=es.get(index=index,id=object,doc_type=request.args.get("doc_type","doc"))
+            if elkversion==7:
+                ret=es.get(index=index,id=object)
+            else:
+                ret=es.get(index=index,id=object,doc_type=request.args.get("doc_type","doc"))
         except:
             ret=None
         return {'error':"","data":ret}
@@ -960,11 +996,17 @@ def genericCRUD(index,object,user=None):
             if("$pbkdf2-sha256" not in dataobj["password"]):
                 dataobj["password"]=pbkdf2_sha256.hash(dataobj["password"])
                 data=json.dumps(dataobj)
-        es.index(index=index,body=data,doc_type=request.args.get("doc_type","doc"),id=object)
+        if elkversion==7:
+            es.index(index=index,body=data,id=object)
+        else:
+            es.index(index=index,body=data,doc_type=request.args.get("doc_type","doc"),id=object)
         return {'error':""}
     elif met== 'delete':
         try:
-            ret=es.delete(index=index,id=object,doc_type=request.args.get("doc_type","doc"))
+            if elkversion==7:
+                ret=es.delete(index=index,id=object)
+            else:
+                ret=es.delete(index=index,id=object,doc_type=request.args.get("doc_type","doc"))
             logger.info(ret)
         except:
             ret=None
@@ -976,6 +1018,7 @@ def handleAPICalls():
     global es,userActivities,conn
     while True:
         logger.info("APIs history");
+        elkversion=getELKVersion(es)
         try:
             with userlock:
                 apis=userActivities[:]
@@ -985,7 +1028,11 @@ def handleAPICalls():
                     indexdatepattern="nyx_apicalls-"+datetime.now().strftime("%Y.%m.%d").lower()
                     for api in apis:
                         action={}
-                        action["index"]={"_index":indexdatepattern,"_type":"doc"}
+                        if elkversion==7:
+                            action["index"]={"_index":indexdatepattern}
+                        else:
+                            action["index"]={"_index":indexdatepattern,"_type":"doc"}
+
                         messagebody+=json.dumps(action)+"\r\n";
                         messagebody+=json.dumps(api)+"\r\n"
                     es.bulk(messagebody)
@@ -1030,7 +1077,10 @@ def refresh_indices():
     if last_indices_refresh+timedelta(seconds=indices_refresh_seconds)>datetime.now():
         return
     logger.info("Refresh Indices")    
-    indices=es.search(index="nyx_indice",body={},doc_type="doc")["hits"]["hits"]
+    if elkversion==7:
+        indices=es.search(index="nyx_indice",body={})["hits"]["hits"]
+    else:
+        indices=es.search(index="nyx_indice",body={},doc_type="doc")["hits"]["hits"]
     last_indices_refresh=datetime.now()
 
 #---------------------------------------------------------------------------
@@ -1041,7 +1091,11 @@ def refresh_translations():
     if last_translation_refresh+timedelta(seconds=last_translation_refresh_seconds)>datetime.now():
         return
     logger.info("Refreshing Translations")    
-    translationsrec=es.search(index="nyx_translation",body={"size":1000},doc_type="doc")["hits"]["hits"]
+    if elkversion==7:
+        translationsrec=es.search(index="nyx_translation",body={"size":1000})["hits"]["hits"]
+    else:
+        translationsrec=es.search(index="nyx_translation",body={"size":1000},doc_type="doc")["hits"]["hits"]
+
     for tran in translationsrec:    
         source=tran["_source"]
         for key in source:
