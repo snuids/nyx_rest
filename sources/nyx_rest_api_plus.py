@@ -42,12 +42,6 @@ MODULE="nyx_rest"+"_"+str(os.getpid())
 WELCOME=os.environ["WELCOMEMESSAGE"]
 ICON=os.environ["ICON"]
 
-# os.environ['TZ'] = 'Europe/Athens'
-# time.tzset()
-# time.strftime('%X %x %Z')
-# print(datetime.now())
-# print("datetime.now() "*30)
-
 indices={}
 indices_refresh_seconds=60
 last_indices_refresh=datetime.now()-timedelta(minutes=10)
@@ -850,7 +844,6 @@ def kibanaLoad(user=None):
 
     logger.info("Full Key:"+"nyx_kib_msearch"+token)
     matchrequest=redisserver.get("nyx_kib_msearch"+token).decode('utf-8')
-    #matchrequest="{\"index\":\"docker_stats*\",\"ignore_unavailable\":true,\"preference\":1547384538374}\n{\"aggs\":{\"2\":{\"date_histogram\":{\"field\":\"@timestamp\",\"interval\":\"5m\",\"time_zone\":\"Europe/Berlin\",\"min_doc_count\":1},\"aggs\":{\"3\":{\"terms\":{\"field\":\"name\",\"size\":5,\"order\":{\"1\":\"desc\"}},\"aggs\":{\"1\":{\"max\":{\"field\":\"memory_stats.usage\"}}}}}}},\"size\":0,\"_source\":{\"excludes\":[]},\"stored_fields\":[\"*\"],\"script_fields\":{},\"docvalue_fields\":[{\"field\":\"@timestamp\",\"format\":\"date_time\"},{\"field\":\"preread\",\"format\":\"date_time\"},{\"field\":\"read\",\"format\":\"date_time\"}],\"query\":{\"bool\":{\"must\":[{\"match_all\":{}},{\"match_all\":{}},{\"range\":{\"@timestamp\":{\"gte\":1547370177415,\"lte\":1547384577415,\"format\":\"epoch_millis\"}}}],\"filter\":[],\"should\":[],\"must_not\":[]}},\"timeout\":\"30000ms\"}\n{\"index\":\"nyx_module_info*\",\"ignore_unavailable\":true,\"preference\":1547384538374}\n{\"aggs\":{\"2\":{\"terms\":{\"field\":\"module\",\"size\":20,\"order\":{\"_count\":\"desc\"}}}},\"size\":0,\"_source\":{\"excludes\":[]},\"stored_fields\":[\"*\"],\"script_fields\":{\"SecondsFromNow\":{\"script\":{\"inline\":\"(System.currentTimeMillis()/1000)-(doc['@timestamp'].date.millis/1000)\",\"lang\":\"painless\"}}},\"docvalue_fields\":[{\"field\":\"@timestamp\",\"format\":\"date_time\"}],\"query\":{\"bool\":{\"must\":[{\"match_all\":{}},{\"match_all\":{}},{\"range\":{\"@timestamp\":{\"gte\":1547370177415,\"lte\":1547384577415,\"format\":\"epoch_millis\"}}}],\"filter\":[],\"should\":[],\"must_not\":[]}},\"timeout\":\"30000ms\"}\n{\"index\":\"nyx_module_info*\",\"ignore_unavailable\":true,\"preference\":1547384538374}\n{\"aggs\":{\"2\":{\"terms\":{\"field\":\"module\",\"size\":20,\"order\":{\"_key\":\"desc\"}},\"aggs\":{\"1\":{\"top_hits\":{\"script_fields\":{\"SecondsFromNow\":{\"script\":{\"inline\":\"(System.currentTimeMillis()/1000)-(doc['@timestamp'].date.millis/1000)\",\"lang\":\"painless\"}}},\"size\":1,\"sort\":[{\"@timestamp\":{\"order\":\"desc\"}}]}}}}},\"size\":0,\"_source\":{\"excludes\":[]},\"stored_fields\":[\"*\"],\"script_fields\":{\"SecondsFromNow\":{\"script\":{\"inline\":\"(System.currentTimeMillis()/1000)-(doc['@timestamp'].date.millis/1000)\",\"lang\":\"painless\"}}},\"docvalue_fields\":[{\"field\":\"@timestamp\",\"format\":\"date_time\"}],\"query\":{\"bool\":{\"must\":[{\"match_all\":{}},{\"match_all\":{}},{\"range\":{\"@timestamp\":{\"gte\":1547370177415,\"lte\":1547384577415,\"format\":\"epoch_millis\"}}}],\"filter\":[],\"should\":[],\"must_not\":[]}},\"timeout\":\"30000ms\"}\n"
     logger.info(matchrequest)
     return kibanaData(es,conn,matchrequest,user,outputformat,True,OUTPUT_URL,OUTPUT_FOLDER)
 
