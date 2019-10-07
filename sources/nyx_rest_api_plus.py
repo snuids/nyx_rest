@@ -36,7 +36,7 @@ from logstash_async.handler import AsynchronousLogstashHandler
 from elasticsearch import Elasticsearch as ES, RequestsHttpConnection as RC
 
 
-VERSION="2.3.0"
+VERSION="2.4.0"
 MODULE="nyx_rest"+"_"+str(os.getpid())
 
 WELCOME=os.environ["WELCOMEMESSAGE"]
@@ -900,8 +900,6 @@ def pg_genericCRUD(index,col,pkey,user=None):
             res=cursor.fetchone()
             description=[{"col":x[0],"type":x[1]} for x in cursor.description]
             
-            #print(description)
-            #print(res)
             res2={}
             for index,x in enumerate(cursor.description):
                 if x[1] in [1082,1184,1114]:
@@ -911,11 +909,6 @@ def pg_genericCRUD(index,col,pkey,user=None):
                     res2[x[0]]=res[index]
                 res2[x[0]+"_$type"]=x[1]
                 
-     
-        # try:
-        #     ret=es.get(index=index,id=object,doc_type=request.args.get("doc_type","doc"))
-        # except:
-        #     ret=None
         pg_connection.commit()
         return {'error':"","data":res2,"columns":description}
     elif met== 'post':
@@ -959,12 +952,11 @@ def pg_genericCRUD(index,col,pkey,user=None):
                 logger.info(res)
 
             pg_connection.commit()
-            # ret=es.delete(index=index,id=object,doc_type=request.args.get("doc_type","doc"))
-            # logger.info(ret)
             pass
         except:
             logger.error("Unable to delete record.",exc_info=True)
             ret=None
+            return {'error':"unalbe to delete record"}
 
         return {'error':""}
 
@@ -976,9 +968,15 @@ def pg_genericCRUD(index,col,pkey,user=None):
 @token_required()
 def genericCRUD(index,object,user=None):
     global es
+    data = None
 
     met=request.method.lower()
     logger.info("Generic Index="+index+" Object:"+object+" Method:"+met);    
+               
+    cui=can_use_indice(index,user,None)
+    if not cui[0]:
+        logger.info("Index Not Allowed for user.")
+        return {'error':"Not Allowed","records":[],"aggs":[]}
 
     if met== 'get':        
         try:
@@ -987,20 +985,23 @@ def genericCRUD(index,object,user=None):
             else:
                 ret=es.get(index=index,id=object,doc_type=request.args.get("doc_type","doc"))
         except:
-            ret=None
+            return {'error':"unable to get data","data":None}
         return {'error':"","data":ret}
     elif met== 'post':
-        data= request.data.decode("utf-8")        
-        if index=="nyx_user":
-            dataobj=json.loads(data)
-            if("$pbkdf2-sha256" not in dataobj["password"]):
-                dataobj["password"]=pbkdf2_sha256.hash(dataobj["password"])
-                data=json.dumps(dataobj)
-        if elkversion==7:
-            es.index(index=index,body=data,id=object)
-        else:
-            es.index(index=index,body=data,doc_type=request.args.get("doc_type","doc"),id=object)
-        return {'error':""}
+        try:
+            data= request.data.decode("utf-8")        
+            if index=="nyx_user":
+                dataobj=json.loads(data)
+                if("$pbkdf2-sha256" not in dataobj["password"]):
+                    dataobj["password"]=pbkdf2_sha256.hash(dataobj["password"])
+                    data=json.dumps(dataobj)
+            if elkversion==7:
+                es.index(index=index,body=data,id=object)
+            else:
+                es.index(index=index,body=data,doc_type=request.args.get("doc_type","doc"),id=object)
+        except:
+            return {'error':"unable to post data"}
+
     elif met== 'delete':
         try:
             if elkversion==7:
@@ -1009,15 +1010,53 @@ def genericCRUD(index,object,user=None):
                 ret=es.delete(index=index,id=object,doc_type=request.args.get("doc_type","doc"))
             logger.info(ret)
         except:
-            ret=None
+            return {'error':"unable to delete data"}
 
-        return {'error':""}
+
+    send_event(user=user, indice=index, method=met, _id=object, doc_type=request.args.get("doc_type","doc"), obj=data)
+
+
+    return {'error':""}
+
+
+def send_event(user, indice, method, _id, doc_type=None, obj=None):    
+    notif_dest = None
+    
+    global indices
+    for ind in indices:
+        pat=ind["_source"]["indicepattern"]
+        
+        if re.search(pat, indice)!=None:
+            tmp = ind["_source"].get('notifications')
+            if tmp is not None and tmp != '':
+                notif_dest=tmp
+                break
+    
+    if notif_dest is not None:
+        obj_to_send = {
+            'user': user,
+            'method': method,
+            'indice': indice,
+            'id': _id,
+        }
+        
+        if doc_type is not None:
+            obj_to_send['doc_type'] = doc_type
+        
+        if obj is not None:
+            obj_to_send['obj'] = obj
+            
+        print(obj_to_send)
+        conn.send_message(notif_dest, json.dumps(obj_to_send))  
+    
+    else:
+        print('no notif to send')
 
 
 def handleAPICalls():
     global es,userActivities,conn
     while True:
-        logger.info("APIs history");
+        logger.info("APIs history")
         elkversion=getELKVersion(es)
         try:
             with userlock:
@@ -1169,21 +1208,11 @@ def can_use_indice(indice,user,query):
             resultsmustbefiltered=ind["_source"]["privilegecolumn"]
 
         # Check if a privilege is required to access the collection
-        # logger.info(">>>>")
-        # logger.info(indice)
-        # logger.info(ind["_source"])
-        # logger.info(re.search(pat, indice) !=None)
         if re.search(pat, indice) !=None and "privileges" in ind["_source"] and ind["_source"]["privileges"]!="":
-            # logger.info("===================")
-            # logger.info(user["privileges"])
-            # logger.info(str(ind["_source"]["privileges"]))
             if len([value for value in user["privileges"] if value in ind["_source"]["privileges"]])==0:
                 logger.info("Not allowed")
                 return (False,query,resultsmustbefiltered)
             else:
-                # logger.info("=============+>"*20)
-                # logger.info(ind["_source"])
-                # logger.info(user)
                 if "filtercolumn" in ind["_source"]:
                     if "filters" in user and len (user["filters"])>0:
                         newquery= " OR ".join([ind["_source"]["filtercolumn"]+":"+x for x in user["filters"]])
@@ -1200,7 +1229,8 @@ def can_use_indice(indice,user,query):
                     return (True,query,resultsmustbefiltered)
     
     return (True,query,resultsmustbefiltered)
-    
+
+
 #---------------------------------------------------------------------------
 # compute kibana url
 #---------------------------------------------------------------------------

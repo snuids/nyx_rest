@@ -30,11 +30,7 @@ def filterReports(res,user):
         return res
 
     return list(filter(lambda x:True if x["_source"]["creds"]["user"].get("user","NA")==user["id"] else False,res))
-    
-
-
-
-
+  
 def applyPrivileges(res,user,column):
     logger=logging.getLogger()
     logger.info("Apply privileges")
@@ -164,8 +160,6 @@ def loadData(es,conn,index,data,doc_type,download,cui,is_rest_api,user,outputfor
         #print([item["_id"] for item in response["hits"]["hits"]])
         response = es.scroll(scroll_id=response['_scroll_id'], scroll='10m')
 
-
-
     if index.find("nyx_reporttask")==0:
         hits=filterReports(hits,user)    
 
@@ -177,15 +171,11 @@ def loadData(es,conn,index,data,doc_type,download,cui,is_rest_api,user,outputfor
         return {'error':"","took":round(datetime.now().timestamp()-start,2),"total":total,"records":hits,"aggs":aggs}
     
     exportcolumns=None
-    
-    
 
     if len(hits)>5000 and is_rest_api:
         logger.info("Using Rest Helper Process...")
         if extra!=None:
             data["extra"]=extra
-
-        
 
         conn.send_message("/queue/REST_LOAD_DATA"
             ,json.dumps({"index":index,"data":data,"doc_type":doc_type
@@ -208,41 +198,7 @@ def loadData(es,conn,index,data,doc_type,download,cui,is_rest_api,user,outputfor
 
     df=pd.DataFrame(cleanrecs)
 
-### GET MAPPING
     datescol={}
-#     try:
-#         containertimezone=pytz.timezone(tzlocal.get_localzone().zone)
-
-#         indices_client = IndicesClient(es)
-#         map=indices_client.get_mapping(index=index,doc_type="doc")
-#         for key in map:
-#             indice=map[key]
-#             if "mappings" in indice and "doc" in indice["mappings"] and "properties" in indice["mappings"]["doc"]:
-#                 for col in indice["mappings"]["doc"]["properties"]:
-# #                    logger.info("===>"+indice["mappings"]["doc"]["properties"][col]["type"])
-#                     if indice["mappings"]["doc"]["properties"][col]["type"]=="date":
-#                         datescol[col]=True
-
-#         #print(df["DateAccident"])
-#         for ind,col in enumerate(df.columns):
-#             if col in datescol:
-#                 logger.info("Convert column:"+col)
-#                 logger.info("Type:"+str(df.dtypes[ind]))
-#                 if str(df.dtypes[ind])=="int64":
-#                     #logger.info("Type:"+str(df.dtypes[ind]))
-#                     df[col]=pd.to_datetime(df[col],unit='ms',utc=True).dt.tz_convert(containertimezone)
-#                     mindt=pytz.utc.localize(datetime(1971, 1, 1))
-#                     #logger.info(mindt)
-#                     df[col]=df[col].apply(lambda x:x if x>=mindt else "")
-#                     #logger.info("Type:"+str(df.dtypes[ind]))
-#                 else:
-#                     df[col]=pd.to_datetime(df[col],utc=True).dt.tz_convert(containertimezone)
-
-# #        logger.info(df["actualStart"])
-
-#     except Exception as e:
-#         logger.error("Unable to read mapping.",exc_info=True)
-#         logger.error(e)
 
     if exportcolumns!= None:
         finalcols=[]
