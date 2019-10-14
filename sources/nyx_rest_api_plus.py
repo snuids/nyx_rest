@@ -36,7 +36,7 @@ from logstash_async.handler import AsynchronousLogstashHandler
 from elasticsearch import Elasticsearch as ES, RequestsHttpConnection as RC
 
 
-VERSION="2.5.0"
+VERSION="2.6.0"
 MODULE="nyx_rest"+"_"+str(os.getpid())
 
 WELCOME=os.environ["WELCOMEMESSAGE"]
@@ -422,7 +422,7 @@ def computeMenus(usr,token):
 
             old_kibana_url=config.get("url")
 
-            config["url"]=compute_kibana_url(dict_dashboard, config)
+            config["url"]=compute_kibana_url(dict_dashboard, appl)
 
             if config.get("filtercolumn") is not None and config.get("filtercolumn")!="" and "filters" in usr["_source"] and len(usr["_source"]["filters"])>0:
                 logger.info('compute kibana url for : '+str(appl.get('title')))
@@ -1234,29 +1234,30 @@ def can_use_indice(indice,user,query):
 #---------------------------------------------------------------------------
 # compute kibana url
 #---------------------------------------------------------------------------
-def compute_kibana_url(dashboard_dict, nyx_config):
-    if nyx_config.get('kibanaId') is None:
-        return nyx_config.get('url')
+def compute_kibana_url(dashboard_dict, appl):
+    if appl.get('config').get('kibanaId') is None:
+        return appl.get('config').get('url')
 
-    url = "/dashboard/" + nyx_config['kibanaId'] + ""
+    url = "/dashboard/" + appl.get('config')['kibanaId'] + ""
 
     time = "from:now-7d,mode:quick,to:now"
 
-    if nyx_config.get('kibanaTime') is not None:
-        time = nyx_config.get('kibanaTime')
+    if appl.get('config').get('kibanaTime') is not None:
+        time = appl.get('config').get('kibanaTime')
 
     refresh = "refreshInterval:(pause:!t,value:0)"
 
-    if nyx_config.get('timeRefresh') and nyx_config.get('timeRefreshValue'):
-        refresh = nyx_config.get('timeRefreshValue')
-
-        return 'INVALIDURL'
+    if appl.get('timeRefresh') and appl.get('timeRefreshValue'):
+        if 'refreshInterval' in appl.get('timeRefreshValue'): # to handle the transition, we want to keep only the else part
+            refresh = appl.get('timeRefreshValue')
+        else: 
+            refresh = 'refreshInterval:(pause:!t,value:'+str(appl.get('timeRefreshValue'))+')'
 
     try:
-        dash = dashboard_dict[nyx_config.get('kibanaId')]
+        dash = dashboard_dict[appl.get('config').get('kibanaId')]
     except:
         logger.error("Unable to compute kibana URL")
-        logger.error(nyx_config)
+        logger.error(appl.get('config'))
         return 'INVALIDURL'
 
     dash_obj = dash.get('_source').get('dashboard')
@@ -1304,6 +1305,8 @@ def compute_kibana_url(dashboard_dict, nyx_config):
     if dash.get('_source').get('namespace') and dash.get('_source').get('namespace') != 'default':
         space = 's/' + dash.get('_source').get('namespace')
 
+
+    print('./kibananyx/'+space+"/app/kibana#"+url)
     return ('./kibananyx/'+space+"/app/kibana#"+url)
 
 #---------------------------------------------------------------------------
@@ -1358,25 +1361,18 @@ thread.start()
 
 refresh_translations()
 
-#from lib.ext_test import config as ex1config
-
 logger.info("Scanning files in lib...")
 logger.info("========================")
-for ext_lib in os.listdir("lib"):   
-    if ".py" in  ext_lib and "ext" in ext_lib:
-#        logger.info("Importing 1:"+ext_lib)
-#        module = importlib.import_module('lib.ext_test')
-        logger.info("Importing 2:"+ext_lib) 
-        logger.info("lib."+ext_lib.replace(".py","")) 
+try:
+    for ext_lib in os.listdir("lib"):   
+        if ".py" in  ext_lib and "ext" in ext_lib:
+            logger.info("Importing 2:"+ext_lib) 
+            logger.info("lib."+ext_lib.replace(".py","")) 
 
-        module = importlib.import_module("lib."+ext_lib.replace(".py",""))
-        module.config(api,conn,es,redisserver,token_required)
-
-
-
-
-
-
+            module = importlib.import_module("lib."+ext_lib.replace(".py",""))
+            module.config(api,conn,es,redisserver,token_required)
+except:
+    logger.info('no lib directory found')
 
 if __name__ != '__main__':
     gunicorn_logger = logging.getLogger("gunicorn.error")
@@ -1387,7 +1383,5 @@ if __name__ != '__main__':
         gunicorn_logger.addHandler(lshandler)
 
 if __name__ == '__main__':    
-    
-
     logger.info("AMQC_URL          :"+os.environ["AMQC_URL"])
     app.run(threaded=False,host= '0.0.0.0')
