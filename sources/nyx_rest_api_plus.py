@@ -36,7 +36,7 @@ from logstash_async.handler import AsynchronousLogstashHandler
 from elasticsearch import Elasticsearch as ES, RequestsHttpConnection as RC
 
 
-VERSION="2.6.0"
+VERSION="2.7.0"
 MODULE="nyx_rest"+"_"+str(os.getpid())
 
 WELCOME=os.environ["WELCOMEMESSAGE"]
@@ -1245,7 +1245,7 @@ def compute_kibana_url(dashboard_dict, appl):
     if appl.get('config').get('kibanaTime') is not None:
         time = appl.get('config').get('kibanaTime')
 
-    refresh = "refreshInterval:(pause:!t,value:0)"
+    refresh = "refreshInterval:(pause:!f,value:0)"
 
     if appl.get('timeRefresh') and appl.get('timeRefreshValue'):
         if 'refreshInterval' in appl.get('timeRefreshValue'): # to handle the transition, we want to keep only the else part
@@ -1305,8 +1305,6 @@ def compute_kibana_url(dashboard_dict, appl):
     if dash.get('_source').get('namespace') and dash.get('_source').get('namespace') != 'default':
         space = 's/' + dash.get('_source').get('namespace')
 
-
-    print('./kibananyx/'+space+"/app/kibana#"+url)
     return ('./kibananyx/'+space+"/app/kibana#"+url)
 
 #---------------------------------------------------------------------------
