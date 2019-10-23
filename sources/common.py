@@ -24,13 +24,31 @@ def getELKVersion(es):
 def filterReports(res,user):
     logger=logging.getLogger()
     logger.info("Filter reports")
-    logger.info(user)
+
+    if "admin" in user["privileges"]:
+        return res
+    return list(filter(lambda x:True if x["_source"]["creds"]["user"].get("user","NA")==user["id"] else False,res))
+
+def filterReportDefs(res,user):
+    logger=logging.getLogger()
+    logger.info("Filter reports defs")
 
     if "admin" in user["privileges"]:
         return res
 
-    return list(filter(lambda x:True if x["_source"]["creds"]["user"].get("user","NA")==user["id"] else False,res))
-  
+    newlist=[]
+
+    for rep in res:
+        
+        rep2=rep["_source"].get("privileges",[])
+        print(rep2)
+        for rep_privilege in rep2:
+            if rep_privilege in user["privileges"]:
+                newlist.append(rep)
+                break
+    return newlist
+
+
 def applyPrivileges(res,user,column):
     logger=logging.getLogger()
     logger.info("Apply privileges")
@@ -162,6 +180,9 @@ def loadData(es,conn,index,data,doc_type,download,cui,is_rest_api,user,outputfor
 
     if index.find("nyx_reporttask")==0:
         hits=filterReports(hits,user)    
+    if index.find("nyx_reportdef")==0:
+        hits=filterReportDefs(hits,user)    
+
 
     if cui[2]!=None and cui[2]!="":
         hits=applyPrivileges(hits,user,cui[2])    
