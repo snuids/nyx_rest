@@ -221,6 +221,41 @@ def loadData(es,conn,index,data,doc_type,download,cui,is_rest_api,user,outputfor
 
     datescol={}
 
+    cols=set([])
+    try:
+        mappings=es.indices.get_mapping(index=index)
+        for key in mappings:
+            if "mappings" in mappings[key]:
+                #print(mappings[key]["mappings"])
+                for typ in mappings[key]["mappings"]:                    
+                    if "properties" in mappings[key]["mappings"][typ]:
+                        cols=mappings[key]["mappings"][typ]["properties"]
+                        cols=list(filter(lambda x:True if cols[x].get("type","NA")=="date" else False,[_ for _ in cols]))
+                        cols=set(cols)
+                    break
+            break
+    except:
+        logger.error("Unable to convert column.",exc_info=True)
+        
+    if len(cols)>0:
+        containertimezone = pytz.timezone(tzlocal.get_localzone().zone)
+        for col in df.columns:
+            if col in cols:
+                logger.info("Must convert date:"+col)
+                if df[col].dtype == "int64":
+                    #df[col].fillna("",inplace=True)
+                    #print(df[col])
+                    df[col] = pd.to_datetime(
+                        df[col], unit='ms', utc=True).dt.tz_convert(containertimezone)
+                    df[col]=df[col].apply(lambda x:x if x.year>1970 else "")
+                else:
+                    df[col] = pd.to_datetime(
+                        df[col], utc=True).dt.tz_convert(containertimezone)
+
+
+
+        
+
     if exportcolumns!= None:
         finalcols=[]
         finalcolnames=[]

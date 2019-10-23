@@ -36,7 +36,7 @@ from logstash_async.handler import AsynchronousLogstashHandler
 from elasticsearch import Elasticsearch as ES, RequestsHttpConnection as RC
 
 
-VERSION="2.9.0"
+VERSION="2.10.0"
 MODULE="nyx_rest"+"_"+str(os.getpid())
 
 WELCOME=os.environ["WELCOMEMESSAGE"]
@@ -223,7 +223,7 @@ def getUserFromToken(request):
             logger.info("Token reinitialized from redis cluster.")
             return redusrobj
 
-    logger.error("Invalid Token:"+token)
+    logger.info("Invalid Token:"+token)
     return None
 
 
