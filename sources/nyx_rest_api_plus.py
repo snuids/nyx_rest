@@ -1056,9 +1056,9 @@ def send_event(user, indice, method, _id, doc_type=None, obj=None):
 def handleAPICalls():
     global es,userActivities,conn
     while True:
-        logger.info("APIs history")
-        elkversion=getELKVersion(es)
         try:
+            logger.info("APIs history")
+            elkversion=getELKVersion(es)
             with userlock:
                 apis=userActivities[:]
                 userActivities=[]
@@ -1072,13 +1072,13 @@ def handleAPICalls():
                         else:
                             action["index"]={"_index":indexdatepattern,"_type":"doc"}
 
-                        messagebody+=json.dumps(action)+"\r\n";
+                        messagebody+=json.dumps(action)+"\r\n"
                         messagebody+=json.dumps(api)+"\r\n"
                     es.bulk(messagebody)
             if conn != None:
-                logger.debug("Sending Life Sign");
+                logger.debug("Sending Life Sign")
                 conn.send_life_sign()
-                logger.debug("Sleeping");
+                logger.debug("Sleeping")
         except Exception as e:
             logger.error("Unable to send life sign or api history.")
             logger.error(e)
