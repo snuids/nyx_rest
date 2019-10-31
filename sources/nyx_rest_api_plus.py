@@ -1,4 +1,7 @@
-import re
+"""
+v2.11.0 AMA 31/OCT/2019  Fixed a security issue that occured when the login is the mail address and get tokenized.
+
+"""import re
 import json
 import time
 import uuid
@@ -36,7 +39,8 @@ from logstash_async.handler import AsynchronousLogstashHandler
 from elasticsearch import Elasticsearch as ES, RequestsHttpConnection as RC
 
 
-VERSION="2.10.0"
+
+VERSION="2.11.0"
 MODULE="nyx_rest"+"_"+str(os.getpid())
 
 WELCOME=os.environ["WELCOMEMESSAGE"]
@@ -397,6 +401,7 @@ class reloadConfig(Resource):
 
 
 def computeMenus(usr,token):
+    
     refresh_translations()
     if elkversion==7:
         res3=es.search(size=1000,index="nyx_app",body={"sort" : [{ "order" : "asc" }]})
@@ -527,10 +532,13 @@ class loginRest(Resource):
                             "bool": {
                                 "must": [
                                     {
-                                        "query_string": {
-                                            "query": "login:"+cleanlogin
+                                        "term": {
+                                        "login.keyword": {
+                                            "value": cleanlogin,
+                                            "boost": 1
                                         }
-                                    }
+                                        }
+                                    }                                    
                                 ]
                                 
                             }
@@ -967,7 +975,7 @@ def pg_genericCRUD(index,col,pkey,user=None):
 @app.route('/api/v1/generic/<index>/<object>',methods=['GET','POST','DELETE'])
 @token_required()
 def genericCRUD(index,object,user=None):
-    global es
+    global es,elkversion
     data = None
 
     met=request.method.lower()
@@ -1000,6 +1008,7 @@ def genericCRUD(index,object,user=None):
             else:
                 es.index(index=index,body=data,doc_type=request.args.get("doc_type","doc"),id=object)
         except:
+            logger.error("unable to post data",exc_info=True)
             return {'error':"unable to post data"}
 
     elif met== 'delete':
@@ -1054,7 +1063,7 @@ def send_event(user, indice, method, _id, doc_type=None, obj=None):
 
 
 def handleAPICalls():
-    global es,userActivities,conn
+    global es,userActivities,conn,elkversion
     while True:
         try:
             logger.info("APIs history")
@@ -1357,6 +1366,8 @@ else:
 thread = threading.Thread(target = handleAPICalls)
 thread.start()
 
+
+elkversion=getELKVersion(es)
 refresh_translations()
 
 logger.info("Scanning files in lib...")

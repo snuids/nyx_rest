@@ -1,0 +1,17 @@
+FROM python:3.7.3-slim
+MAINTAINER snuids
+
+RUN apt-get update
+RUN apt-get install -y vim
+
+COPY ./sources/requirements7.txt /opt/sources/requirements7.txt
+RUN pip install -r /opt/sources/requirements7.txt 
+
+COPY ./sources /opt/sources
+RUN rm -d -r /opt/sources/logs
+RUN rm -d -r /opt/sources/outputs
+RUN mkdir  /opt/sources/logs
+
+WORKDIR /opt/sources
+
+CMD ["python", "nyx_rest_api_plus.py"]
