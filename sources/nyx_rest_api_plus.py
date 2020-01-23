@@ -1,6 +1,7 @@
 """
 v2.11.0 AMA 31/OCT/2019  Fixed a security issue that occured when the login is the mail address and get tokenized.
 v2.12.0 VME 07/JAN/2020  Send a message to delete a token from all instances of the rest api when Logout.
+v2.13.0 VME 23/JAN/2020  TTL tokens dictionnary, to avoid an alive token in the rest api and dead in redis.
 
 """
 import re
@@ -18,6 +19,7 @@ import operator
 import importlib
 
 import threading
+import cachetools
 import os,logging
 import pandas as pd
 import elasticsearch
@@ -42,7 +44,7 @@ from elasticsearch import Elasticsearch as ES, RequestsHttpConnection as RC
 
 
 
-VERSION="2.12.0"
+VERSION="2.13.0"
 MODULE="nyx_rest"+"_"+str(os.getpid())
 
 WELCOME=os.environ["WELCOMEMESSAGE"]
@@ -59,7 +61,8 @@ last_translation_refresh_seconds=60
 last_translation_refresh=datetime.now()-timedelta(minutes=10)
 
 
-tokens={}
+# tokens={}
+tokens=cachetools.TTLCache(maxsize=1000, ttl=5*60)
 tokenlock=threading.RLock()
 userlock = threading.RLock()
 logging.basicConfig(level=logging.INFO,format='%(asctime)s %(levelname)s %(module)s - %(funcName)s: %(message)s', datefmt="%Y-%m-%d %H:%M:%S")
