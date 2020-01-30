@@ -1,7 +1,8 @@
 """
 v2.11.0 AMA 31/OCT/2019  Fixed a security issue that occured when the login is the mail address and get tokenized.
 
-"""import re
+"""
+import re
 import json
 import time
 import uuid
@@ -525,6 +526,7 @@ class loginRest(Resource):
                 else:
                     usr=es.get(index="nyx_user",doc_type="doc",id=cleanlogin)
             except:
+                logger.info("Not found",exc_info=True)
                 usr=None
                 logger.info("Searching by login")
                 body={"size":"100",
