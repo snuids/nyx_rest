@@ -143,13 +143,13 @@ def loadData(es,conn,index,data,doc_type,download,cui,is_rest_api,user,outputfor
         response = es.search(
             index=index,
             body=json.dumps(data),
-            scroll='10m'
+            scroll='10m',
         )
     else:
         response = es.search(
             index=index,
             body=json.dumps(data),
-            scroll='10m',doc_type=doc_type
+            scroll='10m',doc_type=doc_type,
         )
     hits=[]
     aggs=[]
@@ -172,7 +172,7 @@ def loadData(es,conn,index,data,doc_type,download,cui,is_rest_api,user,outputfor
             #print(response["aggregations"])
             #print(aggs)
 
-        if len(hits)>maxsize and is_rest_api:
+        if len(hits)>=maxsize and is_rest_api:
             break
 
         #print([item["_id"] for item in response["hits"]["hits"]])
