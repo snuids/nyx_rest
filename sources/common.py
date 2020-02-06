@@ -115,8 +115,6 @@ def cleanElasticRecords(records):
 def loadData(es,conn,index,data,doc_type,download,cui,is_rest_api,user,outputformat,OUTPUT_URL,OUTPUT_FOLDER):
     logger=logging.getLogger()
     elkversion=getELKVersion(es)
-    #if elkversion==7:
-    #    doc_type="_doc"
 
     logger.info("LOAD DATA index=%s doc_type=%s" %(index,doc_type))
 
@@ -125,8 +123,6 @@ def loadData(es,conn,index,data,doc_type,download,cui,is_rest_api,user,outputfor
     extra=data.get("extra",None)
     if extra !=None:
         del data["extra"]
-
-    #res=es.search(index=index,body=json.dumps(data),doc_type=doc_type)
     
     if "size" in data:
         maxsize=data["size"]
@@ -164,18 +160,13 @@ def loadData(es,conn,index,data,doc_type,download,cui,is_rest_api,user,outputfor
 
     while len(response['hits']['hits']):
         if "hits" in response and "hits" in response["hits"]:  
-#            print(len(response["hits"]["hits"]))
             hits+=response["hits"]["hits"]
         if "aggregations" in response:
-            #print("COUCOUCOUCOCUOCUOUC"*30)
             aggs=response["aggregations"]
-            #print(response["aggregations"])
-            #print(aggs)
 
         if len(hits)>=maxsize and is_rest_api:
             break
 
-        #print([item["_id"] for item in response["hits"]["hits"]])
         response = es.scroll(scroll_id=response['_scroll_id'], scroll='10m')
 
     if index.find("nyx_reporttask")==0:
@@ -226,7 +217,6 @@ def loadData(es,conn,index,data,doc_type,download,cui,is_rest_api,user,outputfor
         mappings=es.indices.get_mapping(index=index)
         for key in mappings:
             if "mappings" in mappings[key]:
-                #print(mappings[key]["mappings"])
                 for typ in mappings[key]["mappings"]:                    
                     if "properties" in mappings[key]["mappings"][typ]:
                         cols=mappings[key]["mappings"][typ]["properties"]
@@ -243,8 +233,6 @@ def loadData(es,conn,index,data,doc_type,download,cui,is_rest_api,user,outputfor
             if col in cols:
                 logger.info("Must convert date:"+col)
                 if df[col].dtype == "int64":
-                    #df[col].fillna("",inplace=True)
-                    #print(df[col])
                     df[col] = pd.to_datetime(
                         df[col], unit='ms', utc=True).dt.tz_convert(containertimezone)
                     df[col]=df[col].apply(lambda x:x if x.year>1970 else "")

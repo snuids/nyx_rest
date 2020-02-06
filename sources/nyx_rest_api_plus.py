@@ -2,6 +2,7 @@
 v2.11.0 AMA 31/OCT/2019  Fixed a security issue that occured when the login is the mail address and get tokenized.
 v2.12.0 VME 07/JAN/2020  Send a message to delete a token from all instances of the rest api when Logout.
 v2.13.0 VME 23/JAN/2020  TTL tokens dictionnary, to avoid an alive token in the rest api and dead in redis.
+v2.14.0 VME 05/FEB/2020  File system v1
 
 """
 import re
@@ -13,6 +14,8 @@ import redis
 import base64
 import prison
 import random
+import string
+import random
 import psycopg2
 import requests
 import operator
@@ -20,18 +23,22 @@ import importlib
 
 import threading
 import cachetools
+import subprocess
 import os,logging
 import pandas as pd
 import elasticsearch
-
+from pathlib import Path
 from flask import Response
 from functools import wraps
+from flask import send_file
+from zipfile import ZipFile
 
 from datetime import datetime
 from datetime import timedelta
 from importlib import resources
 from pg_common import loadPGData
 from passlib.hash import pbkdf2_sha256
+
 from flask import make_response,url_for
 from flask_cors import CORS, cross_origin
 from amqstompclient import amqstompclient
@@ -44,7 +51,7 @@ from elasticsearch import Elasticsearch as ES, RequestsHttpConnection as RC
 
 
 
-VERSION="2.13.0"
+VERSION="2.14.0"
 MODULE="nyx_rest"+"_"+str(os.getpid())
 
 WELCOME=os.environ["WELCOMEMESSAGE"]
@@ -110,13 +117,6 @@ app.register_blueprint(blueprint)
 
 name_space = api.namespace('api/v1', description='Main APIs')
 
-
-#ex1.api=api
-
-
-#api = Api(app, version='1.0', title='Nyx Rest API',
-#    description='Nyx Rest API',
-#)
 CORS(app)
 
 logger.info("Starting redis connection")
@@ -291,11 +291,23 @@ def token_required(*roles):
                     else:
                         ret={'error':"NO_PRIVILEGE"}
             endtime=int(datetime.now().timestamp()*1000)
-            ret["timespan"]=endtime-starttime
+
+            timespan = endtime-starttime
+            logger.info(type(ret))
+
             logger.info("<<< FINISH:"+request.path)
-            if "token" in request.args:
-                pushHistoryToELK(request,ret["timespan"],usr, request.args["token"],ret["error"])
             
+            error=''
+            if type(ret) == dict:
+                error=ret["error"]
+
+            if "token" in request.args:
+                pushHistoryToELK(request,timespan,usr, request.args["token"],error)
+
+            if type(ret) != dict:
+                return ret
+            
+            ret["timespan"]=timespan
             return jsonify(ret)
         return decorated_function
     return wrapper
@@ -333,8 +345,6 @@ def cssRest():
     return Response(res["_source"]["file"], mimetype='text/css')
      
 
-
-
 #---------------------------------------------------------------------------
 # API configRest
 #---------------------------------------------------------------------------
@@ -344,8 +354,6 @@ class configRest(Resource):
     def get(self):
         logger.info("Config called")
         return {'error':"",'status':'ok','version':VERSION,'welcome':WELCOME,'icon':ICON}
-
-
 
 
 #---------------------------------------------------------------------------
@@ -389,6 +397,272 @@ class sendMessage(Resource):
         req= json.loads(request.data.decode("utf-8"))    
         conn.send_message(req["destination"],req["body"])  
         return {'error':""}
+
+
+#---------------------------------------------------------------------------
+# API list dir 
+#---------------------------------------------------------------------------
+
+listdirAPI = api.model('listdir_model', {
+    'rec_id': fields.String(description="The application rec_id.", required=True),
+    'path': fields.String(description="The relative path of the application.", required=True)
+})
+
+@name_space.route('/listdir')
+class listDir(Resource):
+    @token_required()
+    @check_post_parameters("rec_id","path")
+    @api.doc(description="List files and directories in a directory.",params={'token': 'A valid token'})
+    @api.expect(listdirAPI)
+    def post(self,user=None):
+        req= json.loads(request.data.decode("utf-8"))
+        
+        path = req['path']
+        logger.info(f"path    : {path}")
+
+        prepath, regex = retrieve_app_info(req['rec_id'])
+
+        if prepath is None:
+            return {'error':"unknown app"}
+
+
+        prepath = os.path.abspath(prepath)
+
+        logger.info(f"prepath : {prepath}")
+
+        dirpath = os.path.abspath(f"{prepath}/{path}")
+
+        logger.info(f"dirpath : {dirpath}")
+
+        if not dirpath.startswith(prepath):
+            return {'error':"not allowed"}
+
+        return list_dir(dirpath, path, regex)
+
+def retrieve_app_info(rec_id):
+    try:
+        if elkversion==7:
+            app=es.get(index="nyx_app",id=rec_id)
+        else:
+            app=es.get(index="nyx_app",doc_type="doc",id=rec_id)
+
+
+        logger.info(app)
+        if app['_source']['type'] == 'file-system':
+            regex = ''
+            if 'regex' in app['_source']['config']:
+                regex = app['_source']['config']['regex']
+
+            return app['_source']['config']['rootpath'], regex
+
+    except elasticsearch.NotFoundError:
+        logger.warn('Unknown app')
+    except Exception as e:
+        logger.error("Unable to retrive root path of the app")
+        logger.error(e)
+
+    return None
+
+def list_dir(dir_path, rel_path, regex):
+    try:
+        dir_list = os.listdir(dir_path)
+        
+        ret = []        
+        for i in dir_list:
+            path = os.path.abspath(dir_path+'/'+i)
+            print(path)
+
+            stats = os.stat(path)
+            obj_name = path.split('/')[-1]
+
+            extension = 'dir'
+            if os.path.isfile(path):
+                obj_type = 'file'
+
+                if regex != '':
+                    z = re.match(regex, obj_name)
+
+                    if z is None:
+                        continue
+
+                extension = obj_name.split('.')[-1]
+
+            if os.path.isdir(path):
+                obj_type = 'dir'
+
+            obj = {
+                'path' : (rel_path+'/'+i).replace('//','/'),
+                'creation_time' : int(stats.st_ctime),
+                'modification_time' : int(stats.st_mtime),
+                'name' : obj_name,
+                'type' : obj_type,
+                'size' : stats.st_size,
+                'extension' : extension 
+            }
+
+            ret.append(obj)
+                
+        return {'error':"", 'data':ret}
+            
+    except FileNotFoundError:
+        logger.error(f"the directory {dir_path} doesnt exist")
+        return {'error':"the directory doesnt exist"}
+    except NotADirectoryError:
+        logger.error(f"{dir_path} is not a directory")
+        return {'error':"not a directory"}
+
+
+
+#---------------------------------------------------------------------------
+# API download file
+#---------------------------------------------------------------------------
+
+downloadfileAPI = api.model('download_file', {
+    'files': fields.String(description="A file or a list of file (comma separated).", required=True),
+    'rec_id': fields.String(description="The application rec_id.", required=True),
+    'path': fields.String(description="The relative path of the application.", required=True)
+})
+
+@name_space.route('/downloadfiles')
+class downloadFiles(Resource):
+    @token_required()
+    @check_post_parameters("rec_id","path","files")
+    @api.doc(description="Download a file or a list of file.",params={'token': 'A valid token'})
+    @api.expect(downloadfileAPI)
+    def post(self,user=None):
+        req = json.loads(request.data.decode("utf-8"))
+
+
+        files = req['files'].split(',')
+        path = req['path']
+        logger.info(f"path    : {path}")
+
+        prepath, regex = retrieve_app_info(req['rec_id'])
+
+        if prepath is None:
+            return {'error':"unknown app"}
+
+        prepath = os.path.abspath(prepath)
+
+        logger.info(f"prepath : {prepath}")
+
+        dirpath = os.path.abspath(f"{prepath}/{path}")
+
+        logger.info(f"dirpath : {dirpath}")
+
+        if not dirpath.startswith(prepath):
+            return {'error':"not allowed"}
+
+        if len(files) == 0:
+            return {'error':'error in file format'}
+        elif len(files) == 1:
+
+            objpath = os.path.abspath(f"{dirpath}/{files[0]}")
+
+            logger.info(f"objpath : {objpath}")
+
+            if not objpath.startswith(prepath):
+                return {'error':"not allowed"}
+
+
+            if os.path.isfile(objpath):
+                return send_file(objpath, attachment_filename=files[0])
+            elif  os.path.isdir(objpath):
+
+                logger.info(get_all_file_paths(objpath))
+
+                filepaths_list = get_all_file_paths(objpath)
+
+                zip_file_name = f"{randomString(10)}.zip"            
+
+                Path("./zip_folder").mkdir(parents=True, exist_ok=True)
+
+                with ZipFile(f"./zip_folder/{zip_file_name}",'w') as zip: 
+                    # writing each file one by one 
+                    for file in filepaths_list: 
+                        fname = f".{remove_prefix(file, dirpath)}"
+                        zip.write(file, fname) 
+                
+                logger.info(os.path.abspath(f"./zip_folder/{zip_file_name}"))
+
+                ret = send_file(os.path.abspath(f"./zip_folder/{zip_file_name}"), attachment_filename=files[0])
+                ret.content_type = 'zipfile'
+                os.remove(f"./zip_folder/{zip_file_name}")
+
+                return ret
+
+        else:
+            
+            zippath = os.path.abspath(f"{prepath}/download.zip")
+
+            logger.info(f"zippath : {zippath}")
+
+            filepaths_list = []
+
+            for fil in files:
+                objpath = os.path.abspath(f"{dirpath}/{fil}")
+
+                if not objpath.startswith(prepath):
+                    return {'error':"not allowed"}
+
+                logger.info(f"****{fil}   -> {objpath}    -  {os.path.isfile(objpath)}")
+
+                if os.path.isfile(objpath):
+                    filepaths_list.append(objpath)
+                elif  os.path.isdir(objpath):
+
+                    logger.info(get_all_file_paths(objpath))
+
+                    filepaths_list += get_all_file_paths(objpath)
+
+            logger.info(filepaths_list)
+
+            zip_file_name = f"{randomString(10)}.zip"            
+
+            Path("./zip_folder").mkdir(parents=True, exist_ok=True)
+
+            with ZipFile(f"./zip_folder/{zip_file_name}",'w') as zip: 
+                # writing each file one by one 
+                for file in filepaths_list: 
+                    fname = f".{remove_prefix(file, dirpath)}"
+                    zip.write(file, fname) 
+            
+            logger.info(os.path.abspath(f"./zip_folder/{zip_file_name}"))
+
+            ret = send_file(os.path.abspath(f"./zip_folder/{zip_file_name}"), attachment_filename=files[0])
+
+            os.remove(f"./zip_folder/{zip_file_name}")
+            ret.content_type = 'zipfile'
+            return ret
+
+            #return {'error':'zip mode not yet implemented'}
+
+def remove_prefix(text, prefix):
+    if text.startswith(prefix):
+        return text[len(prefix):]
+    return text  # or whatever
+
+def randomString(stringLength):
+    """Generate a random string with the combination of lowercase and uppercase letters """
+
+    letters = string.ascii_letters
+    return ''.join(random.choice(letters) for i in range(stringLength))
+
+
+def get_all_file_paths(directory): 
+  
+    # initializing empty file paths list 
+    file_paths = [] 
+  
+    # crawling through directory and subdirectories 
+    for root, directories, files in os.walk(directory): 
+        for filename in files: 
+            # join the two strings in order to form the full filepath. 
+            filepath = os.path.join(root, filename) 
+            file_paths.append(filepath) 
+  
+    # returning all file paths 
+    return file_paths   
 
 #---------------------------------------------------------------------------
 # API reloadConfiguration
@@ -462,7 +736,6 @@ def computeMenus(usr,token):
             else:
                 target=categories[appl["category"]]["subcategories"][""]=[]
         target.append(appl)
-        #logger.info(appl["title"])
 
     finalcategory=[]
 
@@ -470,16 +743,12 @@ def computeMenus(usr,token):
     logger.info("User language:"+language)
 
     for key in categories:
-        #print(key)
         loc_cat=get_translated_item(language,"menus",key)
         finalcategory.append({"category":key,"loc_category":loc_cat,"submenus":[]})
         target=finalcategory[-1]
         for key2 in categories[key]:
-            #print("=>"+key2)
-            
-    #        print(categories[key][key2])
+
             for key3 in categories[key][key2]:
-                #print("==>"+key3)
                 loc_sub=get_translated_item(language,"menus",key3)
                 target["submenus"].append({"title":key3,"loc_title":loc_sub,"apps":[]})
                 for appli in categories[key][key2][key3]:
@@ -636,7 +905,7 @@ class logout(Resource):
     @token_required()
     @api.doc(description="Log the user out.",params={'token': 'A valid token'})
     def get(self,user=None):
-        logger.info(">>> Logout");
+        logger.info(">>> Logout")
         token=request.args.get('token')
         redisserver.delete("nyx_tok_"+str(token))
         redisserver.delete("nyx_nodered_"+str(token))
@@ -801,7 +1070,6 @@ class genericSearch(Resource):
             logger.info("Index Not Allowed for user.")
             return {'error':"Not Allowed","records":[],"aggs":[]}
 
-#        logger.info(cui)
         logger.info("Must be filtered:"+str(cui[2]))
         
         data["query"]=cui[1]
