@@ -799,6 +799,7 @@ class loginRest(Resource):
                 else:
                     usr=es.get(index="nyx_user",doc_type="doc",id=cleanlogin)
             except:
+                logger.info("Not found",exc_info=True)
                 usr=None
                 logger.info("Searching by login")
                 body={"size":"100",
