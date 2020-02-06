@@ -167,7 +167,8 @@ def loadData(es,conn,index,data,doc_type,download,cui,is_rest_api,user,outputfor
         if len(hits)>=maxsize and is_rest_api:
             break
 
-        response = es.scroll(scroll_id=response['_scroll_id'], scroll='10m')
+        #print([item["_id"] for item in response["hits"]["hits"]])
+        response = es.scroll(scroll_id=response['_scroll_id'], scroll='2m')
 
     if index.find("nyx_reporttask")==0:
         hits=filterReports(hits,user)    
