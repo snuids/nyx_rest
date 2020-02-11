@@ -139,16 +139,17 @@ def loadData(es,conn,index,data,doc_type,download,cui,is_rest_api,user,outputfor
         response = es.search(
             index=index,
             body=json.dumps(data),
-            scroll='10m',
+            scroll='1m',
         )
     else:
         response = es.search(
             index=index,
             body=json.dumps(data),
-            scroll='10m',doc_type=doc_type,
+            scroll='1m',doc_type=doc_type,
         )
     hits=[]
     aggs=[]
+    scroll_ids=[]
 
     total=0
     if "hits" in response and "total" in response["hits"]:
@@ -168,7 +169,8 @@ def loadData(es,conn,index,data,doc_type,download,cui,is_rest_api,user,outputfor
             break
 
         #print([item["_id"] for item in response["hits"]["hits"]])
-        response = es.scroll(scroll_id=response['_scroll_id'], scroll='2m')
+        scroll_ids.append(response['_scroll_id'])
+        response = es.scroll(scroll_id=response['_scroll_id'], scroll='1m')
 
     if index.find("nyx_reporttask")==0:
         hits=filterReports(hits,user)    
@@ -179,6 +181,7 @@ def loadData(es,conn,index,data,doc_type,download,cui,is_rest_api,user,outputfor
     if cui[2]!=None and cui[2]!="":
         hits=applyPrivileges(hits,user,cui[2])    
 
+    es.clear_scroll(body={'scroll_id': scroll_ids})
     
     if not download:
         return {'error':"","took":round(datetime.now().timestamp()-start,2),"total":total,"records":hits,"aggs":aggs}
