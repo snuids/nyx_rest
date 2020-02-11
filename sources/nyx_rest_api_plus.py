@@ -3,7 +3,7 @@ v2.11.0 AMA 31/OCT/2019  Fixed a security issue that occured when the login is t
 v2.12.0 VME 07/JAN/2020  Send a message to delete a token from all instances of the rest api when Logout.
 v2.13.0 VME 23/JAN/2020  TTL tokens dictionnary, to avoid an alive token in the rest api and dead in redis.
 v2.14.0 VME 05/FEB/2020  File system v1
-v2.14.1 AMA 05/FEB/2020  Scrolls IDs are now correctly deleted
+v2.14.2 AMA 05/FEB/2020  Scrolls IDs are now correctly deleted
 """
 import re
 import json
@@ -51,7 +51,7 @@ from elasticsearch import Elasticsearch as ES, RequestsHttpConnection as RC
 
 
 
-VERSION="2.14.1"
+VERSION="2.14.2"
 MODULE="nyx_rest"+"_"+str(os.getpid())
 
 WELCOME=os.environ["WELCOMEMESSAGE"]
