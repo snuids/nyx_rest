@@ -152,6 +152,10 @@ def loadData(es,conn,index,data,doc_type,download,cui,is_rest_api,user,outputfor
     scroll_ids=[]
 
     total=0
+
+    if "_scroll_id" in response:
+        scroll_ids.append(response['_scroll_id'])
+
     if "hits" in response and "total" in response["hits"]:
         if isinstance(response["hits"]["total"],dict):
             total=response["hits"]["total"]["value"]
@@ -181,7 +185,7 @@ def loadData(es,conn,index,data,doc_type,download,cui,is_rest_api,user,outputfor
     if cui[2]!=None and cui[2]!="":
         hits=applyPrivileges(hits,user,cui[2])    
 
-    es.clear_scroll(body={'scroll_id': scroll_ids})
+    res2=es.clear_scroll(body={'scroll_id': scroll_ids})
     
     if not download:
         return {'error':"","took":round(datetime.now().timestamp()-start,2),"total":total,"records":hits,"aggs":aggs}
