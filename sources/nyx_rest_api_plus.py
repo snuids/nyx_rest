@@ -874,8 +874,20 @@ class loginRest(Resource):
 
                 finalcategory=computeMenus(usr,str(token))
 
+                all_priv=[]
+                all_filters=[]
+                if "admin" in usr["_source"]["privileges"]:
+                    all_priv=[]
+                    all_filters=[]
 
-                resp=make_response(jsonify({'version':VERSION,'error':"",'cred':{'token':token,'user':usr["_source"]},"menus":finalcategory}))
+                    all_priv = loadData(es,conn,'nyx_privilege',{},'doc',False,(None, None, None)
+                                                    ,True,usr['_source'],None,None,None)
+
+                    all_filters = loadData(es,conn,'nyx_filter',{},'doc',False,(None, None, None)
+                                                    ,True,usr['_source'],None,None,None)
+
+                resp=make_response(jsonify({'version':VERSION,'error':"",'cred':{'token':token,'user':usr["_source"]},
+                                                            "menus":finalcategory,"all_priv":all_priv['records'],"all_filters":all_filters['records']}))
                 resp.set_cookie('nyx_kibananyx', str(token))
 
                 setACookie("nodered",usr["_source"]["privileges"],resp,token)
@@ -1390,7 +1402,7 @@ class esMapping(Resource):
             mappings.sort(key=operator.itemgetter('id'))
             return {"error":"","data":mappings}
         except elasticsearch.NotFoundError:
-            return {"error":"404","result":None}
+            return {"error":"","data":None}
 
 
 
