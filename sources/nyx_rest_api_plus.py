@@ -4,6 +4,7 @@ v2.12.0 VME 07/JAN/2020  Send a message to delete a token from all instances of 
 v2.13.0 VME 23/JAN/2020  TTL tokens dictionnary, to avoid an alive token in the rest api and dead in redis.
 v2.14.0 VME 05/FEB/2020  File system v1
 v2.14.3 AMA 05/FEB/2020  Scrolls IDs are now correctly deleted
+v2.15.0 VME 20/FEB/2020  Login will send all privileges and filters if admin
 """
 import re
 import json
@@ -51,7 +52,7 @@ from elasticsearch import Elasticsearch as ES, RequestsHttpConnection as RC
 
 
 
-VERSION="2.14.3"
+VERSION="2.15.0"
 MODULE="nyx_rest"+"_"+str(os.getpid())
 
 WELCOME=os.environ["WELCOMEMESSAGE"]
