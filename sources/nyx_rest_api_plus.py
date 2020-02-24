@@ -4,6 +4,8 @@ v2.12.0 VME 07/JAN/2020  Send a message to delete a token from all instances of 
 v2.13.0 VME 23/JAN/2020  TTL tokens dictionnary, to avoid an alive token in the rest api and dead in redis.
 v2.14.0 VME 05/FEB/2020  File system v1
 v2.14.3 AMA 05/FEB/2020  Scrolls IDs are now correctly deleted
+v2.15.0 VME 20/FEB/2020  Login will send all privileges and filters if admin
+v2.15.1 VME 20/FEB/2020  Bug fixing
 v3.0.0  AMA 23/FEB/2020  Compatible with elastic version 7.4.2
 """
 import re
@@ -882,13 +884,13 @@ class loginRest(Resource):
                     all_filters=[]
 
                     all_priv = loadData(es,conn,'nyx_privilege',{},'doc',False,(None, None, None)
-                                                    ,True,usr['_source'],None,None,None)
+                                                    ,True,usr['_source'],None,None,None)['records']
 
                     all_filters = loadData(es,conn,'nyx_filter',{},'doc',False,(None, None, None)
-                                                    ,True,usr['_source'],None,None,None)
+                                                    ,True,usr['_source'],None,None,None)['records']
 
                 resp=make_response(jsonify({'version':VERSION,'error':"",'cred':{'token':token,'user':usr["_source"]},
-                                                            "menus":finalcategory,"all_priv":all_priv['records'],"all_filters":all_filters['records']}))
+                                                            "menus":finalcategory,"all_priv":all_priv,"all_filters":all_filters}))
                 resp.set_cookie('nyx_kibananyx', str(token))
 
                 setACookie("nodered",usr["_source"]["privileges"],resp,token)
