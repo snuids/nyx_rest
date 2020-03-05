@@ -520,27 +520,28 @@ def list_dir(dir_path, rel_path, regex):
 # API download file
 #---------------------------------------------------------------------------
 
-downloadfileAPI = api.model('download_file', {
-    'files': fields.String(description="A file or a list of file (comma separated).", required=True),
-    'rec_id': fields.String(description="The application rec_id.", required=True),
-    'path': fields.String(description="The relative path of the application.", required=True)
+filesPostAPI = api.model('files_post_model', {
+    'data': fields.String(description="A file in base64 format", required=True),
 })
 
-@name_space.route('/downloadfiles')
-class downloadFiles(Resource):
+@name_space.route('/files')
+class files(Resource):
     @token_required()
-    @check_post_parameters("rec_id","path","files")
-    @api.doc(description="Download a file or a list of file.",params={'token': 'A valid token'})
-    @api.expect(downloadfileAPI)
-    def post(self,user=None):
-        req = json.loads(request.data.decode("utf-8"))
+    # @check_post_parameters("rec_id","path","files")
+    @api.doc(description="Download a file or a list of file.",
+             params={'token': 'A valid token', 
+                     'rec_id': 'The application rec_id', 
+                     'path':'the relative path inside the app',
+                     'files': 'A file or a list of file (comma separated). (GET, DELETE)',})
+    # @api.expect(filesAPI)
+    def get(self,user=None):
+        rec_id=request.args["rec_id"]
+        path=request.args["path"]
+        files=request.args["files"].split(',')
 
-
-        files = req['files'].split(',')
-        path = req['path']
         logger.info(f"path    : {path}")
 
-        prepath, regex = retrieve_app_info(req['rec_id'])
+        prepath, regex = retrieve_app_info(rec_id)
 
         if prepath is None:
             return {'error':"unknown app"}
@@ -569,7 +570,7 @@ class downloadFiles(Resource):
 
 
             if os.path.isfile(objpath):
-                return send_file(objpath, attachment_filename=files[0])
+                return send_file(objpath, attachment_filename=files[0], cache_timeout=5)
             elif  os.path.isdir(objpath):
 
                 logger.info(get_all_file_paths(objpath))
@@ -588,7 +589,7 @@ class downloadFiles(Resource):
                 
                 logger.info(os.path.abspath(f"./zip_folder/{zip_file_name}"))
 
-                ret = send_file(os.path.abspath(f"./zip_folder/{zip_file_name}"), attachment_filename=files[0])
+                ret = send_file(os.path.abspath(f"./zip_folder/{zip_file_name}"), attachment_filename=files[0], cache_timeout=5)
                 ret.content_type = 'zipfile'
                 os.remove(f"./zip_folder/{zip_file_name}")
 
@@ -632,13 +633,70 @@ class downloadFiles(Resource):
             
             logger.info(os.path.abspath(f"./zip_folder/{zip_file_name}"))
 
-            ret = send_file(os.path.abspath(f"./zip_folder/{zip_file_name}"), attachment_filename=files[0])
+            ret = send_file(os.path.abspath(f"./zip_folder/{zip_file_name}"), attachment_filename=files[0], cache_timeout=5)
 
             os.remove(f"./zip_folder/{zip_file_name}")
             ret.content_type = 'zipfile'
             return ret
 
             #return {'error':'zip mode not yet implemented'}
+
+    @api.expect(filesPostAPI)
+    def post(self,user=None):
+        rec_id=request.args["rec_id"]
+        path=request.args["path"]
+        # files=request.args["files"].split(',')
+        
+        req= json.loads(request.data.decode("utf-8"))
+        files = req['files']
+
+
+        prepath, regex = retrieve_app_info(rec_id)
+
+        if prepath is None:
+            return {'error':"unknown app"}
+
+        prepath = os.path.abspath(prepath)
+
+        logger.info(f"prepath : {prepath}")
+
+        dirpath = os.path.abspath(f"{prepath}/{path}")
+
+        logger.info(f"dirpath : {dirpath}")
+
+        if not dirpath.startswith(prepath):
+            return {'error':"not allowed"}
+        if len(files) == 0:
+            return {'error':'error in file format'}
+        if len(files) >= 1:
+
+            for _file in files:
+                _file = files[0]
+                data_file_to_upload = base64.b64decode(_file['data'])
+                file_name=_file['file_name']
+
+                filepath = os.path.abspath(f"{dirpath}/{_file['file_name']}")
+
+                logger.info(f"filepath : {filepath}")
+
+                if not filepath.startswith(prepath):
+                    return {'error':"not allowed"}
+
+                try:
+                    newFile = open(filepath, "wb")
+                    bytearr = bytearray(data_file_to_upload)
+                    newFile.write(bytearr)
+                except:
+                    logger.error(f"unable to write file {filepath}")
+                finally:
+                    newFile.close()
+
+            return {"error":""}
+
+        else:
+            return {'error':'dont handle multiple files upload for now'}
+
+
 
 def remove_prefix(text, prefix):
     if text.startswith(prefix):
