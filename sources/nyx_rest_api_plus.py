@@ -7,6 +7,7 @@ v2.14.3 AMA 05/FEB/2020  Scrolls IDs are now correctly deleted
 v2.15.0 VME 20/FEB/2020  Login will send all privileges and filters if admin
 v2.15.1 VME 20/FEB/2020  Bug fixing
 v3.0.0  AMA 23/FEB/2020  Compatible with elastic version 7.4.2
+v3.0.1  VME 05/MAR/2020  Redisign of the files end point 
 """
 import re
 import json
@@ -54,7 +55,7 @@ from elasticsearch import Elasticsearch as ES, RequestsHttpConnection as RC
 
 
 
-VERSION="3.0.0"
+VERSION="3.0.1"
 MODULE="nyx_rest"+"_"+str(os.getpid())
 
 WELCOME=os.environ["WELCOMEMESSAGE"]
