@@ -59,7 +59,10 @@ def loadPGData(es,appid,pgconn,conn,data,download,is_rest_api,user,outputformat,
         endr=data["range"]["lte"]
         if "timefield" in app["_source"]["config"]:
             timecol=app["_source"]["config"]["timefield"]
-            rangequery=timecol+" >= '"+datetime.datetime.fromtimestamp(startr/1000).isoformat()+"' and "+timecol+" <= '"+datetime.datetime.fromtimestamp(endr/1000).isoformat()+"'"
+
+            zone=pytz.timezone(tzlocal.get_localzone().zone)
+            
+            rangequery=timecol+" >= '"+datetime.datetime.fromtimestamp(startr/1000,zone).isoformat()+"' and "+timecol+" <= '"+datetime.datetime.fromtimestamp(endr/1000,zone).isoformat()+"'"
 
             
 
@@ -110,7 +113,7 @@ def loadPGData(es,appid,pgconn,conn,data,download,is_rest_api,user,outputformat,
             aggtimeval=60*60*24*7            
 
 
-        sqlcounthist=sqlcount[0:len("select")]+" count(*),date_trunc('"+aggtime+"',date2) as datein "+sqlcount[queryfrom:]+ " GROUP BY datein"
+        sqlcounthist=sqlcount[0:len("select")]+" count(*),date_trunc('"+aggtime+"',"+app["_source"]["config"]["timefield"]+") as datein "+sqlcount[queryfrom:]+ " GROUP BY datein"
         aggtime="1"+aggtime[0]
 
 
