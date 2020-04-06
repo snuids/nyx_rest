@@ -9,6 +9,8 @@ v2.15.1 VME 20/FEB/2020  Bug fixing
 v3.0.0  AMA 23/FEB/2020  Compatible with elastic version 7.4.2
 v3.0.1  VME 05/MAR/2020  Redisign of the files end point 
 v3.0.2  VME 15/MAR/2020  Fixed a few postgresql issues
+v3.1.0  VME 15/MAR/2020  Fixed an issue when % character is used in kibana
+v3.2.0  AMA 06/Apr/2020  Fixed a privilege issue for collections with filtered columns
 """
 import re
 import json
@@ -55,8 +57,7 @@ from logstash_async.handler import AsynchronousLogstashHandler
 from elasticsearch import Elasticsearch as ES, RequestsHttpConnection as RC
 
 
-
-VERSION="3.0.2"
+VERSION="3.2.0"
 MODULE="nyx_rest"+"_"+str(os.getpid())
 
 WELCOME=os.environ["WELCOMEMESSAGE"]
@@ -1666,6 +1667,19 @@ def compute_kibana_url(dashboard_dict, appl):
                 if ref.get('name')==pan.get('panelRefName') :
                     pan['id']=ref.get('id')  
                     pan['type']=ref.get('type')  
+
+        if pan is not None and pan.get("embeddableConfig") is not None and pan["embeddableConfig"].get("colors") is not None:
+            newcols={}
+            for colkey in pan["embeddableConfig"]["colors"]:
+                newcols[colkey.replace("%","%25").replace(" ","%20")]=pan["embeddableConfig"]["colors"][colkey]
+            pan["embeddableConfig"]["colors"]=newcols
+
+
+        if pan is not None and pan.get("embeddableConfig") is not None and pan["embeddableConfig"].get( "vis") is not None and pan["embeddableConfig"]["vis"].get("colors") is not None:
+            newcols={}
+            for colkey in pan["embeddableConfig"]["vis"]["colors"]:
+                newcols[colkey.replace("%","%25").replace(" ","%20")]=pan["embeddableConfig"]["vis"]["colors"][colkey]
+            pan["embeddableConfig"]["vis"]["colors"]=newcols
 
 
         panels.append(prison.dumps(pan))

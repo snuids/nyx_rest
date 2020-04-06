@@ -61,21 +61,13 @@ def applyPrivileges(res,user,column):
     privhash={}
     for priv in user["privileges"]:
         privhash[priv]=True
-    
-    # logger.info("user "*20)
-    # logger.info(user)
-    # logger.info("privhash "*20)
-    # logger.info(privhash)
-    # logger.info("privhash "*20)
 
     res2=[]
     for rec in res:
         if column in rec["_source"]:
-            # logger.info("REC======")
-            # logger.info(rec)
-            for priv2 in  rec["_source"][column]:
-                logger.info(priv2)
-                logger.info(privhash)
+            for priv2 in  rec["_source"][column].split(','):
+#                logger.info(priv2)
+#                logger.info(privhash)
                 if priv2 in privhash:
                     res2.append(rec)
                 break
