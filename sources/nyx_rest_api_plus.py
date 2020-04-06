@@ -10,7 +10,7 @@ v3.0.0  AMA 23/FEB/2020  Compatible with elastic version 7.4.2
 v3.0.1  VME 05/MAR/2020  Redisign of the files end point 
 v3.0.2  VME 15/MAR/2020  Fixed a few postgresql issues
 v3.1.0  VME 15/MAR/2020  Fixed an issue when % character is used in kibana
-v3.2.0  AMA 06/Apr/2020  Fixed a privilege issue for collections with filtered columns
+v3.3.0  AMA 06/Apr/2020  Fixed a privilege issue for collections with filtered columns
 """
 import re
 import json
@@ -57,7 +57,7 @@ from logstash_async.handler import AsynchronousLogstashHandler
 from elasticsearch import Elasticsearch as ES, RequestsHttpConnection as RC
 
 
-VERSION="3.2.0"
+VERSION="3.3.0"
 MODULE="nyx_rest"+"_"+str(os.getpid())
 
 WELCOME=os.environ["WELCOMEMESSAGE"]
@@ -1594,21 +1594,22 @@ def can_use_indice(indice,user,query):
             if len([value for value in user["privileges"] if value in ind["_source"]["privileges"]])==0:
                 logger.info("Not allowed")
                 return (False,query,resultsmustbefiltered)
-            else:
-                if "filtercolumn" in ind["_source"]:
-                    if "filters" in user and len (user["filters"])>0:
-                        newquery= " OR ".join([ind["_source"]["filtercolumn"]+":"+x for x in user["filters"]])
-                        if len(oldquery)==0:
-                            query["bool"]["must"][queryindex]["query_string"]["query"]=newquery
-                            return (True,query,resultsmustbefiltered)
-                        else:
-                            query["bool"]["must"][queryindex]["query_string"]["query"]=oldquery +" AND ("+newquery+")"
-                            return (True,query,resultsmustbefiltered)
-                            
+
+        if re.search(pat, indice) !=None:
+            if "filtercolumn" in ind["_source"]:
+                if "filters" in user and len (user["filters"])>0:
+                    newquery= " OR ".join([ind["_source"]["filtercolumn"]+":"+x for x in user["filters"]])
+                    if len(oldquery)==0:
+                        query["bool"]["must"][queryindex]["query_string"]["query"]=newquery
+                        return (True,query,resultsmustbefiltered)
                     else:
-                        return (True,query,resultsmustbefiltered)                        
+                        query["bool"]["must"][queryindex]["query_string"]["query"]=oldquery +" AND ("+newquery+")"
+                        return (True,query,resultsmustbefiltered)
+                        
                 else:
-                    return (True,query,resultsmustbefiltered)
+                    return (True,query,resultsmustbefiltered)                        
+            else:
+                return (True,query,resultsmustbefiltered)
     
     return (True,query,resultsmustbefiltered)
 
