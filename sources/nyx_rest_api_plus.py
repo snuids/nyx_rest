@@ -10,7 +10,7 @@ v3.0.0  AMA 23/FEB/2020  Compatible with elastic version 7.4.2
 v3.0.1  VME 05/MAR/2020  Redisign of the files end point 
 v3.0.2  VME 15/MAR/2020  Fixed a few postgresql issues
 v3.1.0  VME 15/MAR/2020  Fixed an issue when % character is used in kibana
-v3.3.0  AMA 06/Apr/2020  Fixed a privilege issue for collections with filtered columns
+v3.3.1  AMA 06/Apr/2020  Fixed a privilege issue for collections with filtered columns
 """
 import re
 import json
@@ -64,6 +64,7 @@ WELCOME=os.environ["WELCOMEMESSAGE"]
 ICON=os.environ["ICON"]
 
 elkversion=6
+
 
 indices={}
 indices_refresh_seconds=60
@@ -1586,7 +1587,7 @@ def can_use_indice(indice,user,query):
         pat=ind["_source"]["indicepattern"]
 
         # Check if a column is used to filter the results
-        if re.search(pat, indice) !=None and "privilegecolumn" in ind["_source"]:
+        if re.search(pat, indice) !=None and "privilegecolumn" in ind["_source"] and ind["_source"]["privilegecolumn"]!="":
             resultsmustbefiltered=ind["_source"]["privilegecolumn"]
 
         # Check if a privilege is required to access the collection
@@ -1596,7 +1597,7 @@ def can_use_indice(indice,user,query):
                 return (False,query,resultsmustbefiltered)
 
         if re.search(pat, indice) !=None:
-            if "filtercolumn" in ind["_source"]:
+            if "filtercolumn" in ind["_source"] and ind["_source"]["filtercolumn"]!="":
                 if "filters" in user and len (user["filters"])>0:
                     newquery= " OR ".join([ind["_source"]["filtercolumn"]+":"+x for x in user["filters"]])
                     if len(oldquery)==0:
