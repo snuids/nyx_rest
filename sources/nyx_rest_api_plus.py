@@ -11,6 +11,7 @@ v3.0.1  VME 05/MAR/2020  Redisign of the files end point
 v3.0.2  VME 15/MAR/2020  Fixed a few postgresql issues
 v3.1.0  VME 15/MAR/2020  Fixed an issue when % character is used in kibana
 v3.3.1  AMA 06/Apr/2020  Fixed a privilege issue for collections with filtered columns
+v3.3.2  AMA 09/Apr/2020  Token added to upload route
 """
 import re
 import json
@@ -57,7 +58,7 @@ from logstash_async.handler import AsynchronousLogstashHandler
 from elasticsearch import Elasticsearch as ES, RequestsHttpConnection as RC
 
 
-VERSION="3.3.0"
+VERSION="3.3.2"
 MODULE="nyx_rest"+"_"+str(os.getpid())
 
 WELCOME=os.environ["WELCOMEMESSAGE"]
@@ -1104,7 +1105,7 @@ def upload_file(user=None):
             logger.info(file)
             logger.info(user)
             data=file.read()
-            conn.send_message(queue,base64.b64encode(data),{"file":file.filename, "user":json.dumps(user)}) 
+            conn.send_message(queue,base64.b64encode(data),{"file":file.filename,"token":request.args.get('token'), "user":json.dumps(user)}) 
             return {"error":""}
     return {"error":""}
 
