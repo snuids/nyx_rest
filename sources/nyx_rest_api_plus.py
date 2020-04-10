@@ -12,6 +12,7 @@ v3.0.2  VME 15/MAR/2020  Fixed a few postgresql issues
 v3.1.0  VME 15/MAR/2020  Fixed an issue when % character is used in kibana
 v3.3.1  AMA 06/Apr/2020  Fixed a privilege issue for collections with filtered columns
 v3.3.2  AMA 09/Apr/2020  Token added to upload route
+v3.3.3  AMA 10/Apr/2020  Added headers to send message API
 """
 import re
 import json
@@ -391,7 +392,8 @@ class errorRest(Resource):
 
 sendMessageAPI = api.model('sendMessage_model', {
     'destination': fields.String(description="The destinaiton example: /queue/TEST", required=True),
-    'body': fields.String(description="The message as a string.", required=True)
+    'body': fields.String(description="The message as a string.", required=True),
+    'headers': fields.String(description="The headers as a string (STRINGIFIED).")
 })
 
 @name_space.route('/sendmessage')
@@ -402,8 +404,11 @@ class sendMessage(Resource):
     @api.expect(sendMessageAPI)
    # @api.doc(body={"destination":"/queue/TEST","body":"Hello"})
     def post(self,user=None):
-        req= json.loads(request.data.decode("utf-8"))    
-        conn.send_message(req["destination"],req["body"])  
+        req= json.loads(request.data.decode("utf-8"))   
+        headers=None 
+        if "headers" in req and len(req["headers"])>0:
+            headers=json.loads(req["headers"])
+        conn.send_message(req["destination"],req["body"],headers=headers)  
         return {'error':""}
 
 
