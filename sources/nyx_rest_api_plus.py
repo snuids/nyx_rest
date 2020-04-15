@@ -13,6 +13,7 @@ v3.1.0  VME 15/MAR/2020  Fixed an issue when % character is used in kibana
 v3.3.1  AMA 06/Apr/2020  Fixed a privilege issue for collections with filtered columns
 v3.3.2  AMA 09/Apr/2020  Token added to upload route
 v3.3.3  AMA 10/Apr/2020  Added headers to send message API
+v3.4.0  AMA 15/Apr/2020  Query filter can use elastic seacrh queries
 """
 import re
 import json
@@ -59,7 +60,7 @@ from logstash_async.handler import AsynchronousLogstashHandler
 from elasticsearch import Elasticsearch as ES, RequestsHttpConnection as RC
 
 
-VERSION="3.3.2"
+VERSION="3.4.0"
 MODULE="nyx_rest"+"_"+str(os.getpid())
 
 WELCOME=os.environ["WELCOMEMESSAGE"]
@@ -1113,6 +1114,57 @@ def upload_file(user=None):
             conn.send_message(queue,base64.b64encode(data),{"file":file.filename,"token":request.args.get('token'), "user":json.dumps(user)}) 
             return {"error":""}
     return {"error":""}
+
+#---------------------------------------------------------------------------
+# API query filter
+#---------------------------------------------------------------------------
+
+queryFilterAPI = api.model('queryFilter_model', {    
+    
+})
+#{"size":200,"query":{"bool":{"must":[{"match_all":{}}]}}}
+
+@name_space.route('/queryFilter/<string:rec_id>')
+class genericQueryFilter(Resource):
+    @token_required()
+    @api.doc(description="Fills the query filters.",params={'token': 'A valid token'})
+    @api.expect(queryFilterAPI)
+    def post(self,rec_id,user=None):
+        global es
+        
+        logger.info("Query Filter="+rec_id);    
+        app=None
+        if elkversion==7:
+            app=es.get(index="nyx_app",id=rec_id)
+        else:
+            app=es.get(index="nyx_app",doc_type="doc",id=rec_id)
+
+        if app==None:
+            return  {"error":"UNKNOWN APP"}
+
+        app=app["_source"]
+
+        if "queryfilters" not in app["config"]:
+            return  {"error":"NO QUERY FILTERS"}
+
+        for queryf in app["config"]["queryfilters"]:
+            if queryf["type"]=="queryselecter":
+                #logger.info("Compute Selecter")
+                cui=can_use_indice(queryf["index"],user,None)
+                query={"from":0,"size":0,"aggregations":{queryf["column"]:{"terms":{"field":queryf["column"],"size":200,"order":[{"_key":"asc"}]}}}}
+                query["query"]=cui[1]
+                #logger.info(json.dumps(query))
+                res=es.search(index=queryf["index"],body=query)
+                #logger.info()
+                queryf["buckets"]=res["aggregations"][queryf["column"]].get("buckets",[])
+
+        
+
+        #data= json.loads(request.data.decode("utf-8"))           
+        #return loadPGData(es,appid,get_postgres_connection(),conn,data,(request.args.get("download","0")=="1")
+        #            ,True,user,request.args.get("output","csv"),OUTPUT_URL,OUTPUT_FOLDER)
+        return  {"error":"","queryfilters":app["config"]["queryfilters"]}
+
 
 #---------------------------------------------------------------------------
 # API generic search
