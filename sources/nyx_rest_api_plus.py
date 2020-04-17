@@ -14,8 +14,10 @@ v3.3.1  AMA 06/Apr/2020  Fixed a privilege issue for collections with filtered c
 v3.3.2  AMA 09/Apr/2020  Token added to upload route
 v3.3.3  AMA 10/Apr/2020  Added headers to send message API
 v3.4.0  AMA 15/Apr/2020  Query filter can use elastic seacrh queries
-v3.5.0  AMA 17/Apr/2020  PG queries can use an offset 
+v3.5.0  VME 15/Apr/2020  passing header "upload_headers" to broker when calling upload endpoint
+v3.6.0  AMA 17/Apr/2020  PG queries can use an offset 
 """
+
 import re
 import json
 import time
@@ -61,7 +63,7 @@ from logstash_async.handler import AsynchronousLogstashHandler
 from elasticsearch import Elasticsearch as ES, RequestsHttpConnection as RC
 
 
-VERSION="3.5.0"
+VERSION="3.6.0"
 MODULE="nyx_rest"+"_"+str(os.getpid())
 
 WELCOME=os.environ["WELCOMEMESSAGE"]
@@ -1112,7 +1114,7 @@ def upload_file(user=None):
             logger.info(file)
             logger.info(user)
             data=file.read()
-            conn.send_message(queue,base64.b64encode(data),{"file":file.filename,"token":request.args.get('token'), "user":json.dumps(user)}) 
+            conn.send_message(queue,base64.b64encode(data),{"file":file.filename,"token":request.args.get('token'), "user":json.dumps(user), "upload_headers":request.headers.environ.get('HTTP_UPLOAD_HEADERS')}) 
             return {"error":""}
     return {"error":""}
 
