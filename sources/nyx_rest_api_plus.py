@@ -14,6 +14,7 @@ v3.3.1  AMA 06/Apr/2020  Fixed a privilege issue for collections with filtered c
 v3.3.2  AMA 09/Apr/2020  Token added to upload route
 v3.3.3  AMA 10/Apr/2020  Added headers to send message API
 v3.4.0  AMA 15/Apr/2020  Query filter can use elastic seacrh queries
+v3.5.0  AMA 17/Apr/2020  PG queries can use an offset 
 """
 import re
 import json
@@ -60,7 +61,7 @@ from logstash_async.handler import AsynchronousLogstashHandler
 from elasticsearch import Elasticsearch as ES, RequestsHttpConnection as RC
 
 
-VERSION="3.4.0"
+VERSION="3.5.0"
 MODULE="nyx_rest"+"_"+str(os.getpid())
 
 WELCOME=os.environ["WELCOMEMESSAGE"]
