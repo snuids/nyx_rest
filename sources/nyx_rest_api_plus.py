@@ -16,7 +16,7 @@ v3.3.3  AMA 10/Apr/2020  Added headers to send message API
 v3.4.0  AMA 15/Apr/2020  Query filter can use elastic seacrh queries
 v3.5.0  VME 15/Apr/2020  passing header "upload_headers" to broker when calling upload endpoint
 v3.6.0  AMA 17/Apr/2020  PG queries can use an offset 
-v3.6.1  AMA 18/Apr/2020  PG queries support ordering
+v3.6.2  AMA 18/Apr/2020  PG queries support ordering
 """
 
 import re
@@ -64,7 +64,7 @@ from logstash_async.handler import AsynchronousLogstashHandler
 from elasticsearch import Elasticsearch as ES, RequestsHttpConnection as RC
 
 
-VERSION="3.6.1"
+VERSION="3.6.2"
 MODULE="nyx_rest"+"_"+str(os.getpid())
 
 WELCOME=os.environ["WELCOMEMESSAGE"]

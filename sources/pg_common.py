@@ -128,8 +128,12 @@ def loadPGData(es,appid,pgconn,conn,data,download,is_rest_api,user,outputformat,
     with pgconn.cursor() as cursor:
         logger.info(sqlcount2)
         cursor.execute(sqlcount2)
-        res=cursor.fetchone()
-        count=res[0]
+        if "group" in sqlcount2.lower():
+            ress=cursor.fetchall()
+            count=len(ress)
+        else:
+            res=cursor.fetchone()
+            count=res[0]
 
 
         if len(sqlcounthist)>0:
