@@ -216,6 +216,8 @@ def loadData(es,conn,index,data,doc_type,download,cui,is_rest_api,user,outputfor
         hits=response["hits"]["hits"]
         if "aggregations" in response:
             aggs=response["aggregations"]
+        else:
+            aggs=[]
         if "hits" in response and "total" in response["hits"]:
             if isinstance(response["hits"]["total"],dict):
                 total=response["hits"]["total"]["value"]

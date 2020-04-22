@@ -17,7 +17,7 @@ v3.4.0  AMA 15/Apr/2020  Query filter can use elastic seacrh queries
 v3.5.0  VME 15/Apr/2020  passing header "upload_headers" to broker when calling upload endpoint
 v3.6.0  AMA 17/Apr/2020  PG queries can use an offset 
 v3.6.3  AMA 18/Apr/2020  PG queries support ordering
-v3.7.1  AMA 22/Apr/2020  Pagination supported in Elastic Search
+v3.7.2  AMA 22/Apr/2020  Pagination supported in Elastic Search
 """
 
 import re
