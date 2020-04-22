@@ -17,6 +17,7 @@ v3.4.0  AMA 15/Apr/2020  Query filter can use elastic seacrh queries
 v3.5.0  VME 15/Apr/2020  passing header "upload_headers" to broker when calling upload endpoint
 v3.6.0  AMA 17/Apr/2020  PG queries can use an offset 
 v3.6.3  AMA 18/Apr/2020  PG queries support ordering
+v3.7.0  AMA 22/Apr/2020  Pagination supported in Elastic Search
 """
 
 import re
@@ -50,6 +51,7 @@ from zipfile import ZipFile
 from datetime import datetime
 from datetime import timedelta
 from importlib import resources
+from common import get_mappings
 from pg_common import loadPGData
 from passlib.hash import pbkdf2_sha256
 
@@ -64,7 +66,7 @@ from logstash_async.handler import AsynchronousLogstashHandler
 from elasticsearch import Elasticsearch as ES, RequestsHttpConnection as RC
 
 
-VERSION="3.6.3"
+VERSION="3.7.0"
 MODULE="nyx_rest"+"_"+str(os.getpid())
 
 WELCOME=os.environ["WELCOMEMESSAGE"]
@@ -307,7 +309,6 @@ def token_required(*roles):
             endtime=int(datetime.now().timestamp()*1000)
 
             timespan = endtime-starttime
-            logger.info(type(ret))
 
             logger.info("<<< FINISH:"+request.path)
             
@@ -1154,13 +1155,20 @@ class genericQueryFilter(Resource):
         for queryf in app["config"]["queryfilters"]:
             if queryf["type"]=="queryselecter":
                 #logger.info("Compute Selecter")
+
+                qht=get_mappings(es,queryf["index"])
+                qcol=queryf["column"]
+                if qcol in qht and qht[qcol]=="text":
+                    qcol+=".keyword"
+
+
                 cui=can_use_indice(queryf["index"],user,None)
-                query={"from":0,"size":0,"aggregations":{queryf["column"]:{"terms":{"field":queryf["column"],"size":200,"order":[{"_key":"asc"}]}}}}
+                query={"from":0,"size":0,"aggregations":{qcol:{"terms":{"field":qcol,"size":200,"order":[{"_key":"asc"}]}}}}
                 query["query"]=cui[1]
                 #logger.info(json.dumps(query))
                 res=es.search(index=queryf["index"],body=query)
                 #logger.info()
-                queryf["buckets"]=res["aggregations"][queryf["column"]].get("buckets",[])
+                queryf["buckets"]=res["aggregations"][qcol].get("buckets",[])
 
         
 
@@ -1399,7 +1407,7 @@ def pg_genericCRUD(index,col,pkey,user=None):
         except:
             logger.error("Unable to delete record.",exc_info=True)
             ret=None
-            return {'error':"unalbe to delete record"}
+            return {'error':"unable to delete record"}
 
         return {'error':""}
 
