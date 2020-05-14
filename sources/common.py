@@ -18,10 +18,20 @@ def get_mappings(es,index):
     finalmaps={}
 
     maps=es.indices.get_mapping(index)
-    maps2=maps[list(maps)[0]]["mappings"]["properties"]
-    for field in maps2:
-        if "type" in maps2[field]:
-            finalmaps[field]=maps2[field]["type"]
+    if "properties" in maps[list(maps)[0]]["mappings"]:
+        maps2=maps[list(maps)[0]]["mappings"]["properties"]
+        for field in maps2:
+            if "type" in maps2[field]:
+                finalmaps[field]=maps2[field]["type"]
+        
+    else:
+        doc_type=list(maps[list(maps)[0]]["mappings"])[0]
+        maps2=maps[list(maps)[0]]["mappings"][doc_type]["properties"]
+        maps2
+        for field in maps2:
+            if "type" in maps2[field]:
+                finalmaps[field]=maps2[field]["type"]
+
     return finalmaps
 
 @cached(cache=TTLCache(maxsize=1024, ttl=300))
