@@ -12,6 +12,28 @@ from elasticsearch.client import IndicesClient
 
 from cachetools import cached, LRUCache, TTLCache
 
+
+@cached(cache=TTLCache(maxsize=1024, ttl=300))
+def get_mappings(es,index):
+    finalmaps={}
+
+    maps=es.indices.get_mapping(index)
+    if "properties" in maps[list(maps)[0]]["mappings"]:
+        maps2=maps[list(maps)[0]]["mappings"]["properties"]
+        for field in maps2:
+            if "type" in maps2[field]:
+                finalmaps[field]=maps2[field]["type"]
+        
+    else:
+        doc_type=list(maps[list(maps)[0]]["mappings"])[0]
+        maps2=maps[list(maps)[0]]["mappings"][doc_type]["properties"]
+        maps2
+        for field in maps2:
+            if "type" in maps2[field]:
+                finalmaps[field]=maps2[field]["type"]
+
+    return finalmaps
+
 @cached(cache=TTLCache(maxsize=1024, ttl=300))
 def get_es_info(es):
     print('get_es_info')
@@ -113,6 +135,17 @@ def loadData(es,conn,index,data,doc_type,download,cui,is_rest_api,user,outputfor
     start=datetime.now().timestamp()
 
     extra=data.get("extra",None)
+
+     #{currentpage: 1, pagesize: 100}
+
+
+    fromval=0
+
+    if extra!=None and "currentpage" in extra  and not download:
+        fromval= (extra["currentpage"]-1)*extra["pagesize"]
+        if fromval>0:
+            data["from"]=fromval
+
     if extra !=None:
         del data["extra"]
     
@@ -127,46 +160,79 @@ def loadData(es,conn,index,data,doc_type,download,cui,is_rest_api,user,outputfor
 
     logger.info (data)
 
-    if elkversion==7:
-        response = es.search(
-            index=index,
-            body=json.dumps(data),
-            scroll='1m',
-        )
-    else:
-        response = es.search(
-            index=index,
-            body=json.dumps(data),
-            scroll='1m',doc_type=doc_type,
-        )
-    hits=[]
-    aggs=[]
-    scroll_ids=[]
+    if "sort" in data:
+        for dat in data["sort"]:
+            key=list(dat)[0]
+            mht=get_mappings(es,index)
+            if key in mht and mht[key]=="text":
+                dat[key+".keyword"]=dat[key]
+                del dat[key]
 
-    total=0
 
-    if "_scroll_id" in response:
-        scroll_ids.append(response['_scroll_id'])
-
-    if "hits" in response and "total" in response["hits"]:
-        if isinstance(response["hits"]["total"],dict):
-            total=response["hits"]["total"]["value"]
+    if fromval ==0:        
+        if elkversion==7:
+            response = es.search(
+                index=index,
+                body=json.dumps(data),
+                scroll='1m',
+            )
         else:
-            total=response["hits"]["total"]
+            response = es.search(
+                index=index,
+                body=json.dumps(data),
+                scroll='1m',doc_type=doc_type,
+            )
+        hits=[]
+        aggs=[]
+        scroll_ids=[]
+
+        total=0
+
+        if "_scroll_id" in response:
+            scroll_ids.append(response['_scroll_id'])
+
+        if "hits" in response and "total" in response["hits"]:
+            if isinstance(response["hits"]["total"],dict):
+                total=response["hits"]["total"]["value"]
+            else:
+                total=response["hits"]["total"]
 
 
-    while len(response['hits']['hits']):
-        if "hits" in response and "hits" in response["hits"]:  
-            hits+=response["hits"]["hits"]
+        while len(response['hits']['hits']):
+            if "hits" in response and "hits" in response["hits"]:  
+                hits+=response["hits"]["hits"]
+            if "aggregations" in response:
+                aggs=response["aggregations"]
+
+            if len(hits)>=maxsize and is_rest_api:
+                break
+
+            #print([item["_id"] for item in response["hits"]["hits"]])
+            scroll_ids.append(response['_scroll_id'])
+            response = es.scroll(scroll_id=response['_scroll_id'], scroll='1m')
+    else:
+        if elkversion==7:
+            response = es.search(
+                index=index,
+                body=json.dumps(data)
+            )
+        else:
+            response = es.search(
+                index=index,
+                body=json.dumps(data),
+                doc_type=doc_type,
+            )
+        logger.info("HELLO")
+        hits=response["hits"]["hits"]
         if "aggregations" in response:
             aggs=response["aggregations"]
-
-        if len(hits)>=maxsize and is_rest_api:
-            break
-
-        #print([item["_id"] for item in response["hits"]["hits"]])
-        scroll_ids.append(response['_scroll_id'])
-        response = es.scroll(scroll_id=response['_scroll_id'], scroll='1m')
+        else:
+            aggs=[]
+        if "hits" in response and "total" in response["hits"]:
+            if isinstance(response["hits"]["total"],dict):
+                total=response["hits"]["total"]["value"]
+            else:
+                total=response["hits"]["total"]
 
     if index.find("nyx_reporttask")==0:
         hits=filterReports(hits,user)    
@@ -177,7 +243,8 @@ def loadData(es,conn,index,data,doc_type,download,cui,is_rest_api,user,outputfor
     if cui[2]!=None and cui[2]!="":
         hits=applyPrivileges(hits,user,cui[2])    
 
-    res2=es.clear_scroll(body={'scroll_id': scroll_ids})
+    if fromval ==0: 
+        res2=es.clear_scroll(body={'scroll_id': scroll_ids})
     
     if not download:
         return {'error':"","took":round(datetime.now().timestamp()-start,2),"total":total,"records":hits,"aggs":aggs}

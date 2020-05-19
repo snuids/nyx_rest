@@ -28,8 +28,12 @@ def loadPGData(es,appid,pgconn,conn,data,download,is_rest_api,user,outputformat,
 
     logger.info("LOAD PG DATA:"+appid)
     maxsize=1000
+    page=1
     if data!=None and "size" in data:
         maxsize=data["size"]
+
+    if data!=None and "page" in data:
+        page=data["page"]
 
     app=getAppByID(es,appid)
 
@@ -124,8 +128,12 @@ def loadPGData(es,appid,pgconn,conn,data,download,is_rest_api,user,outputformat,
     with pgconn.cursor() as cursor:
         logger.info(sqlcount2)
         cursor.execute(sqlcount2)
-        res=cursor.fetchone()
-        count=res[0]
+        if "group" in sqlcount2.lower():
+            ress=cursor.fetchall()
+            count=len(ress)
+        else:
+            res=cursor.fetchone()
+            count=res[0]
 
 
         if len(sqlcounthist)>0:
@@ -141,7 +149,20 @@ def loadPGData(es,appid,pgconn,conn,data,download,is_rest_api,user,outputformat,
 
         #logger.info(res)
 
-        cursor.execute(query+" LIMIT "+str(maxsize))    
+        offset=""
+
+        if page!=1:
+            offset=" OFFSET %d" %((page-1)*maxsize)
+
+        order=""
+        if data!=None and "sort" in data and "column" in data["sort"]:
+            order=" ORDER BY "+data["sort"]["column"]
+            if "order" in data["sort"] and data["sort"]["order"]=="descending":
+                order+=" DESC "
+            #page=data["page"]
+ 
+
+        cursor.execute(query+order+" LIMIT "+str(maxsize)+offset)    
         recs = cursor.fetchall() 
         colnames = [desc[0] for desc in cursor.description]
 
