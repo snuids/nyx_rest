@@ -15,7 +15,13 @@ v3.3.2  AMA 09/Apr/2020  Token added to upload route
 v3.3.3  AMA 10/Apr/2020  Added headers to send message API
 v3.4.0  AMA 15/Apr/2020  Query filter can use elastic seacrh queries
 v3.5.0  VME 15/Apr/2020  passing header "upload_headers" to broker when calling upload endpoint
+v3.6.0  AMA 17/Apr/2020  PG queries can use an offset 
+v3.6.3  AMA 18/Apr/2020  PG queries support ordering
+v3.7.2  AMA 22/Apr/2020  Pagination supported in Elastic Search
+v3.8.0  AMA 07/May/2020  Dynamic query filters
+v3.9.0  AMA 07/May/2020  Lambda rest api added
 """
+
 import re
 import json
 import time
@@ -27,6 +33,7 @@ import prison
 import random
 import string
 import random
+import dateutil
 import psycopg2
 import requests
 import operator
@@ -47,21 +54,24 @@ from zipfile import ZipFile
 from datetime import datetime
 from datetime import timedelta
 from importlib import resources
+from common import get_mappings
 from pg_common import loadPGData
 from passlib.hash import pbkdf2_sha256
+
 
 from flask import make_response,url_for
 from flask_cors import CORS, cross_origin
 from amqstompclient import amqstompclient
 from flask_restplus import Api, Resource, fields
+from cachetools import cached, LRUCache, TTLCache
 from flask import Flask, jsonify, request,Blueprint
 from logging.handlers import TimedRotatingFileHandler
-from common import loadData,applyPrivileges,kibanaData,getELKVersion
 from logstash_async.handler import AsynchronousLogstashHandler
+from common import loadData,applyPrivileges,kibanaData,getELKVersion
 from elasticsearch import Elasticsearch as ES, RequestsHttpConnection as RC
 
 
-VERSION="3.5.0"
+VERSION="3.9.0"
 MODULE="nyx_rest"+"_"+str(os.getpid())
 
 WELCOME=os.environ["WELCOMEMESSAGE"]
@@ -69,6 +79,8 @@ ICON=os.environ["ICON"]
 
 elkversion=6
 
+restapiresults=[]
+restapiresultslock=threading.RLock()
 
 indices={}
 indices_refresh_seconds=60
@@ -226,7 +238,40 @@ def clean_kibana_url(url,column,filter):
             print(minquery)
             url=url.replace(match.group(groupNum),minquery)
     return url    
-                   
+
+@cached(cache=TTLCache(maxsize=1024, ttl=60))
+def getAPIKey(token):
+    if elkversion==7:
+        return es.get(index="nyx_apikey",id=token)
+    else:
+        return es.get(index="nyx_apikey",id=token,doc_type="_doc")
+
+
+def checkAPIKey(request):
+    global tokens
+    if "apikey" not in request.args:
+        return False
+
+    token=request.args.get('apikey')
+    try:
+        api=getAPIKey(token)
+        
+        if api!=None:
+            return True
+    except:
+        pass
+
+    with tokenlock:
+        if token in tokens:
+            return True
+        redusr=redisserver.get("nyx_tok_"+token)
+        logger.info("nyx_fulltok_"+token)
+        if redusr!=None:
+            return True
+    
+
+    return False
+        
 
 def getUserFromToken(request):
     global tokens
@@ -304,7 +349,6 @@ def token_required(*roles):
             endtime=int(datetime.now().timestamp()*1000)
 
             timespan = endtime-starttime
-            logger.info(type(ret))
 
             logger.info("<<< FINISH:"+request.path)
             
@@ -355,6 +399,52 @@ def cssRest():
     #header("Content-type: text/xml")
     return Response(res["_source"]["file"], mimetype='text/css')
      
+#---------------------------------------------------------------------------
+# API lambdaRest
+#---------------------------------------------------------------------------
+
+
+lambdaAPI = api.model('lambda_model', {
+})
+
+
+@name_space.route('/lambdas/<string:runner>/<string:lambdaname>')
+@api.doc(description="Calls a specific lambda.",params={'apikey': 'A valid token'})
+class lambdasRest(Resource):
+#    @token_required("A1","A2")
+    @api.expect(lambdaAPI)
+    def post(self,runner,lambdaname,user=None):    
+        global restapiresults
+
+        if not checkAPIKey(request):
+            return {'error':"BAD API KEY"}
+
+        tosend={
+            "runner":runner,
+            "action":"execute",
+            "restapi":lambdaname,
+            "body":json.loads(request.data.decode("utf-8")),
+            "guid":str(uuid.uuid4())
+            }
+        restapiresults=[]
+        conn.send_message("/topic/NYX_LAMBDA_COMMAND",json.dumps(tosend))
+
+        found=False
+        starttime=datetime.now()
+        while not found:
+            time.sleep(0.05)
+            with restapiresultslock:
+                for res in restapiresults:
+                    if res["guid"]==tosend["guid"]:         
+                        if "return" in res and res["return"]!="null":
+                            return json.loads(res["return"])
+                        else:
+                            return {'error':"Unknown lambda or lambda crashed"}
+
+            if starttime+timedelta(seconds=5)<datetime.now():
+                break                                        
+
+        return {'error':"No answer"}
 
 #---------------------------------------------------------------------------
 # API configRest
@@ -1133,7 +1223,9 @@ class genericQueryFilter(Resource):
     def post(self,rec_id,user=None):
         global es
         
-        logger.info("Query Filter="+rec_id);    
+        logger.info("Query Filter="+rec_id); 
+        data= json.loads(request.data.decode("utf-8"))           
+
         app=None
         if elkversion==7:
             app=es.get(index="nyx_app",id=rec_id)
@@ -1148,16 +1240,75 @@ class genericQueryFilter(Resource):
         if "queryfilters" not in app["config"]:
             return  {"error":"NO QUERY FILTERS"}
 
-        for queryf in app["config"]["queryfilters"]:
+
+        selected=[]
+        if "selected" in data:
+            selected=data["selected"]
+        else:
+            selected=["" for i in range(0,len(app["config"]["queryfilters"])+1)]
+
+        timerange=None
+
+        if "timerange" in data:
+            timerange=data["timerange"]
+            timerange[0]=dateutil.parser.parse(timerange[0])
+            timerange[1]=dateutil.parser.parse(timerange[1])
+
+        addquery=[]
+        alladdqueries=[]
+        for index,queryf in enumerate(app["config"]["queryfilters"]):
+            if queryf["type"]=="queryselecter" and selected[index]!=""  and selected[index]!="*":
+                
+                qht=get_mappings(es,app["config"]["index"])
+                qcol=queryf["field"]
+                if qcol in qht and qht[qcol]=="text":
+                    qcol+=".keyword"
+                val=selected[index]
+                if isinstance(val, str):
+                    addquery.append(qcol+":\""+val+"\"")
+                else:
+                    addquery.append(qcol+":"+str(val))
+            
+            alladdqueries.append(" AND ".join(addquery))
+
+        finaladd=" AND ".join(addquery)
+        logger.info("Add query:"+finaladd)
+
+        for index,queryf in enumerate(app["config"]["queryfilters"]):
             if queryf["type"]=="queryselecter":
                 #logger.info("Compute Selecter")
-                cui=can_use_indice(queryf["index"],user,None)
-                query={"from":0,"size":0,"aggregations":{queryf["column"]:{"terms":{"field":queryf["column"],"size":200,"order":[{"_key":"asc"}]}}}}
+
+                qht=get_mappings(es,app["config"]["index"])
+                qcol=queryf["field"]
+                if qcol in qht and qht[qcol]=="text":
+                    qcol+=".keyword"
+
+
+                cui=can_use_indice(app["config"]["index"],user,None)
+                query={"from":0,"size":0,"aggregations":{qcol:{"terms":{"field":qcol,"size":200,"order":[{"_key":"asc"}]}}}}
                 query["query"]=cui[1]
                 #logger.info(json.dumps(query))
-                res=es.search(index=queryf["index"],body=query)
+                if index>0 and len(alladdqueries[index-1])>0 and len(addquery)>0 and "query" in query and "bool" in query["query"] and "must" in query["query"]["bool"]:
+                    query["query"]["bool"]["must"][0]["query_string"]["query"]="("+query["query"]["bool"]["must"][0]["query_string"]["query"]+") AND "+ alladdqueries[index-1]
+                #res=es.search(index=queryf["index"],body=query)
+
+                if "timefield" in app["config"] and timerange != None:
+                    field=app["config"]["timefield"]
+                    newobj= {"range":{}}
+                    newobj["range"][field]={}
+                    newobj["range"][field]={
+                        "gte": int(timerange[0].timestamp())*1000,
+                        "lte": int(timerange[1].timestamp())*1000,
+                        "format": "epoch_millis"
+                    }
+                    query["query"]["bool"]["must"].append(newobj )
+
+                res=es.search(index=app["config"]["index"],body=query)
                 #logger.info()
-                queryf["buckets"]=res["aggregations"][queryf["column"]].get("buckets",[])
+                queryf["buckets"]=res["aggregations"][qcol].get("buckets",[])
+#                if queryf["index"] not in [_["key"] for _ in queryf["buckets"]]:
+#                    queryf["index"]=queryf["buckets"][0]["key"]
+
 
         
 
@@ -1389,15 +1540,14 @@ def pg_genericCRUD(index,col,pkey,user=None):
             with pg_connection.cursor() as cursor:
                 query="delete from "+index+ " where "+col+"="+str(pkey)
                 cursor.execute(query)
-                res=cursor.fetchone()
-                logger.info(res)
+#                res=cursor.fetchone()
+#                logger.info(res)
 
             pg_connection.commit()
-            pass
         except:
             logger.error("Unable to delete record.",exc_info=True)
             ret=None
-            return {'error':"unalbe to delete record"}
+            return {'error':"unable to delete record"}
 
         return {'error':""}
 
@@ -1794,6 +1944,9 @@ def messageReceived(destination,message,headers):
     if "LOGOUT_EVENT" in destination:
         if message in tokens:
             del tokens[message]
+    elif "NYX_LAMBDA_RESTAPI" in destination:
+        with restapiresultslock:
+            restapiresults.append(json.loads(message))
     else:
         logger.error("Unknown destination %s" %(destination))
 
@@ -1802,7 +1955,7 @@ server={"ip":os.environ["AMQC_URL"],"port":os.environ["AMQC_PORT"]
                 ,"login":os.environ["AMQC_LOGIN"],"password":os.environ["AMQC_PASSWORD"]}
 #logger.info(server)                
 conn=amqstompclient.AMQClient(server
-    , {"name":MODULE,"version":VERSION,"lifesign":"/topic/NYX_MODULE_INFO"},['/topic/LOGOUT_EVENT'],callback=messageReceived)
+    , {"name":MODULE,"version":VERSION,"lifesign":"/topic/NYX_MODULE_INFO"},['/topic/LOGOUT_EVENT','/topic/NYX_LAMBDA_RESTAPI'],callback=messageReceived)
 #conn,listener= amqHelper.init_amq_connection(activemq_address, activemq_port, activemq_user,activemq_password, "RestAPI",VERSION,messageReceived)
 connectionparameters={"conn":conn}
 
