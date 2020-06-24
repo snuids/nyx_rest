@@ -20,9 +20,11 @@ v3.6.3  AMA 18/Apr/2020  PG queries support ordering
 v3.7.2  AMA 22/Apr/2020  Pagination supported in Elastic Search
 v3.8.0  AMA 07/May/2020  Dynamic query filters
 v3.9.0  AMA 07/May/2020  Lambda rest api added
+v3.9.1  AMA 07/May/2020  App tag added
 """
 
 import re
+import jwt
 import json
 import time
 import uuid
@@ -71,7 +73,7 @@ from common import loadData,applyPrivileges,kibanaData,getELKVersion
 from elasticsearch import Elasticsearch as ES, RequestsHttpConnection as RC
 
 
-VERSION="3.9.0"
+VERSION="3.9.1"
 MODULE="nyx_rest"+"_"+str(os.getpid())
 
 WELCOME=os.environ["WELCOMEMESSAGE"]
@@ -837,12 +839,12 @@ class reloadConfig(Resource):
     def get(self,user=None):
         logger.info(user)
         token=request.args["token"]
-        finalcategory=computeMenus({"_source":user},token)
+        finalcategory=computeMenus({"_source":user},token,"console")
         
         return {'version':VERSION,'error':"",'cred':{'token':token,'user':user},"menus":finalcategory}
 
 
-def computeMenus(usr,token):
+def computeMenus(usr,token,apptag):
     
     refresh_translations()
     if elkversion==7:
@@ -860,6 +862,21 @@ def computeMenus(usr,token):
         if "privileges" in usr["_source"] and "privileges" in appl and not "admin" in usr["_source"]["privileges"]:
             if len([value for value in usr["_source"]["privileges"] if value in appl["privileges"]])==0:
                 continue
+        
+        #apptag="mobile"
+
+        if apptag=="console":
+            if "apptags" in appl and len(appl["apptags"])>0 and apptag not in appl["apptags"]:
+                continue
+        else:
+            if "apptags" not in appl or len(appl["apptags"])==0:
+                continue
+            if apptag not in appl["apptags"]:
+                continue
+
+
+        
+
 
         if appl.get("type")=="kibana":
             logger.info('compute kibana url for : '+str(appl.get('title')))
@@ -937,9 +954,47 @@ def computeMenus(usr,token):
 # API login
 #---------------------------------------------------------------------------
 
+@name_space.route('/cred/oauth/<string:action>/<string:social>',methods=['POST'])    
+class loginOAuthRest(Resource):    
+    def post(self,action,social):
+        global tokens
+        logger.info(">> OAUTH LOGIN IN")  
+        data=json.loads(request.data.decode("utf-8"))
+        logger.info(data)  
+
+        post_data={"client_secret":"2997acd1b285d45551ecf6606f53b98b8246717b"
+                    ,"client_id":data["clientId"],"code":data["code"]}
+        
+        r = requests.post('https://github.com/login/oauth/access_token', data = post_data)
+
+        logger.info(r.text)
+        dict = {x[0] : x[1] for x in [x.split("=") for x in r.text.split("&") ]}
+
+        r2=requests.get('https://api.github.com/user?access_token='+dict["access_token"])
+        logger.info(r2.text)
+        
+        r3=requests.get('https://api.github.com/user/emails?access_token='+dict["access_token"])
+        logger.info(r3.text)
+        
+
+        #return jsonify({'authenticated': True,'error':"TATATA","mails":json.loads(r3.text)})
+        token = jwt.encode({
+        'sub': "amarchand@icloud.com",
+        'iat':datetime.utcnow(),
+        'exp': datetime.utcnow() + timedelta(minutes=30)},
+        "2997acd1b285d45551ecf6606f53b98b8246717b")
+
+        #return jsonify({ 'token': token.decode('UTF-8') })
+        return  jsonify({'id': 1,'name':"Arnaud Marchand","email":"amarchand@icloud.com",
+                    "created_at":datetime.utcnow(),"access_token":dict["access_token"]})
+
+
+
+
 loginAPI = api.model('login_model', {
     'login': fields.String(description="The user login", required=True),
-    'password': fields.String(description="The user password.", required=True)
+    'password': fields.String(description="The user password.", required=True),
+    'app': fields.String(description="The app tag.", required=False)
 })
 
 @name_space.route('/cred/login',methods=['POST'])    
@@ -1035,7 +1090,11 @@ class loginRest(Resource):
 
                 redisserver.set("nyx_tok_"+str(token),json.dumps(usr["_source"]),3600*24)
 
-                finalcategory=computeMenus(usr,str(token))
+                apptag="console"
+                if "app" in data:
+                    apptag=data["app"]
+
+                finalcategory=computeMenus(usr,str(token),apptag)
 
                 all_priv=[]
                 all_filters=[]
