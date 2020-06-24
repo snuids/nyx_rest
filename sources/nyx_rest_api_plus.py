@@ -21,6 +21,7 @@ v3.7.2  AMA 22/Apr/2020  Pagination supported in Elastic Search
 v3.8.0  AMA 07/May/2020  Dynamic query filters
 v3.9.0  AMA 07/May/2020  Lambda rest api added
 v3.9.1  AMA 07/May/2020  App tag added
+v3.10.0 VME 19/May/2020  Elastic version send back to ui (/config)
 """
 
 import re
@@ -73,7 +74,7 @@ from common import loadData,applyPrivileges,kibanaData,getELKVersion
 from elasticsearch import Elasticsearch as ES, RequestsHttpConnection as RC
 
 
-VERSION="3.9.1"
+VERSION="3.10.0"
 MODULE="nyx_rest"+"_"+str(os.getpid())
 
 WELCOME=os.environ["WELCOMEMESSAGE"]
