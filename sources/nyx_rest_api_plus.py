@@ -22,6 +22,7 @@ v3.8.0  AMA 07/May/2020  Dynamic query filters
 v3.9.0  AMA 07/May/2020  Lambda rest api added
 v3.9.1  AMA 07/May/2020  App tag added
 v3.10.0 VME 19/May/2020  Elastic version send back to ui (/config)
+v3.10.1 VME 24/Jun/2020  Add querySize parameter for query selecter
 """
 
 import re
@@ -74,7 +75,7 @@ from common import loadData,applyPrivileges,kibanaData,getELKVersion
 from elasticsearch import Elasticsearch as ES, RequestsHttpConnection as RC
 
 
-VERSION="3.10.0"
+VERSION="3.10.1"
 MODULE="nyx_rest"+"_"+str(os.getpid())
 
 WELCOME=os.environ["WELCOMEMESSAGE"]
@@ -1345,7 +1346,17 @@ class genericQueryFilter(Resource):
 
 
                 cui=can_use_indice(app["config"]["index"],user,None)
-                query={"from":0,"size":0,"aggregations":{qcol:{"terms":{"field":qcol,"size":200,"order":[{"_key":"asc"}]}}}}
+
+                size = 200
+
+                try:
+                    if queryf.get('querySize'):
+                        size = int(queryf.get('querySize'))
+                except:
+                    logger.warning('unable to retrieve query size')
+                    pass
+
+                query={"from":0,"size":0,"aggregations":{qcol:{"terms":{"field":qcol,"size":size,"order":[{"_key":"asc"}]}}}}
                 query["query"]=cui[1]
                 #logger.info(json.dumps(query))
                 if index>0 and len(alladdqueries[index-1])>0 and len(addquery)>0 and "query" in query and "bool" in query["query"] and "must" in query["query"]["bool"]:
