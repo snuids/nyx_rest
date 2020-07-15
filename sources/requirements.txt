@@ -22,6 +22,7 @@ greenlet==0.4.15
 gunicorn==19.9.0
 idna==2.7
 itsdangerous==0.24
+jwt==1.0.0
 Jinja2==2.10.1
 jsonschema==3.0.1
 limits==1.3
