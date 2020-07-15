@@ -23,6 +23,7 @@ v3.9.0  AMA 07/May/2020  Lambda rest api added
 v3.9.1  AMA 07/May/2020  App tag added
 v3.10.0 VME 19/May/2020  Elastic version send back to ui (/config)
 v3.10.1 VME 24/Jun/2020  Add querySize parameter for query selecter
+v3.10.2 AMA 15/Jul/2020  Filters and privileges retrieved for user with the "user" privilege
 """
 
 import re
@@ -75,7 +76,7 @@ from common import loadData,applyPrivileges,kibanaData,getELKVersion
 from elasticsearch import Elasticsearch as ES, RequestsHttpConnection as RC
 
 
-VERSION="3.10.1"
+VERSION="3.10.2"
 MODULE="nyx_rest"+"_"+str(os.getpid())
 
 WELCOME=os.environ["WELCOMEMESSAGE"]
@@ -1100,7 +1101,7 @@ class loginRest(Resource):
 
                 all_priv=[]
                 all_filters=[]
-                if "admin" in usr["_source"]["privileges"]:
+                if "admin" in usr["_source"]["privileges"] or "user" in usr["_source"]["privileges"]:
                     all_priv=[]
                     all_filters=[]
 
