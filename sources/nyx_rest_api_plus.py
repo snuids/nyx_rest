@@ -24,6 +24,7 @@ v3.9.1  AMA 07/May/2020  App tag added
 v3.10.0 VME 19/May/2020  Elastic version send back to ui (/config)
 v3.10.1 VME 24/Jun/2020  Add querySize parameter for query selecter
 v3.10.2 AMA 15/Jul/2020  Filters and privileges retrieved for user with the "user" privilege
+v3.11.0 AMA 12/Nov/2020  Cookie flags added: secure=True,httponly=True
 """
 
 import re
@@ -76,7 +77,7 @@ from common import loadData,applyPrivileges,kibanaData,getELKVersion
 from elasticsearch import Elasticsearch as ES, RequestsHttpConnection as RC
 
 
-VERSION="3.10.2"
+VERSION="3.11.0"
 MODULE="nyx_rest"+"_"+str(os.getpid())
 
 WELCOME=os.environ["WELCOMEMESSAGE"]
@@ -1113,7 +1114,7 @@ class loginRest(Resource):
 
                 resp=make_response(jsonify({'version':VERSION,'error':"",'cred':{'token':token,'user':usr["_source"]},
                                                             "menus":finalcategory,"all_priv":all_priv,"all_filters":all_filters}))
-                resp.set_cookie('nyx_kibananyx', str(token))
+                resp.set_cookie('nyx_kibananyx', str(token),secure=True,httponly=True)
 
                 setACookie("nodered",usr["_source"]["privileges"],resp,token)
                 setACookie("anaconda",usr["_source"]["privileges"],resp,token)
@@ -1133,7 +1134,7 @@ def setACookie(privilege,privileges,resp,token):
     
     if "admin" in privileges or (len(privileges)>0 and privilege in privileges):
         redisserver.set("nyx_"+privilege.lower()+"_"+str(token),"OK",3600*24)
-        resp.set_cookie('nyx_'+privilege.lower(), str(token))
+        resp.set_cookie('nyx_'+privilege.lower(), str(token),secure=True,httponly=True)
 
 #---------------------------------------------------------------------------
 # Logout
