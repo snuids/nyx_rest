@@ -13,7 +13,7 @@ elastic-helper==1.2.0
 elasticsearch==6.3.1
 feedparser==5.2.1
 Flask==1.1.1
-Flask-Cors==3.0.7
+Flask-Cors==3.0.9
 flask-restplus==0.12.1
 Flask-SocketIO==3.3.2
 gevent==1.4.0
