@@ -60,3 +60,10 @@ Werkzeug==0.15.5
 wrapt==1.11.2
 xlrd==1.2.0
 XlsxWriter==1.1.2
+google-api-core==1.31.0
+google-api-python-client==2.14.0
+google-auth==1.33.1
+google-auth-httplib2==0.1.0
+googleapis-common-protos==1.53.0
+httplib2==0.19.1
+oauth2client==4.1.3

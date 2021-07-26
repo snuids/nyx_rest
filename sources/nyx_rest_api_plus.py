@@ -25,6 +25,7 @@ v3.10.0 VME 19/May/2020  Elastic version send back to ui (/config)
 v3.10.1 VME 24/Jun/2020  Add querySize parameter for query selecter
 v3.10.2 AMA 15/Jul/2020  Filters and privileges retrieved for user with the "user" privilege
 v3.11.0 AMA 12/Nov/2020  Cookie flags added: secure=True,httponly=True
+v3.12.0 VME 26/Jul/2021  Google Login
 """
 
 import re
@@ -40,7 +41,7 @@ import random
 import string
 import random
 import dateutil
-import psycopg2
+# import psycopg2
 import requests
 import operator
 import importlib
@@ -61,9 +62,16 @@ from datetime import datetime
 from datetime import timedelta
 from importlib import resources
 from common import get_mappings
+
+
+from googleapiclient import discovery
+import httplib2
+from oauth2client import client
+
+
+
 from pg_common import loadPGData
 from passlib.hash import pbkdf2_sha256
-
 
 from flask import make_response,url_for
 from flask_cors import CORS, cross_origin
@@ -77,7 +85,7 @@ from common import loadData,applyPrivileges,kibanaData,getELKVersion
 from elasticsearch import Elasticsearch as ES, RequestsHttpConnection as RC
 
 
-VERSION="3.11.0"
+VERSION="3.12.0"
 MODULE="nyx_rest"+"_"+str(os.getpid())
 
 WELCOME=os.environ["WELCOMEMESSAGE"]
@@ -529,7 +537,8 @@ class listDir(Resource):
         req= json.loads(request.data.decode("utf-8"))
         
         path = req['path']
-        logger.info(f"path    : {path}")
+
+
 
         prepath, regex = retrieve_app_info(req['rec_id'])
 
@@ -995,6 +1004,131 @@ class loginOAuthRest(Resource):
 
 
 
+loginGoogleAPI = api.model('login_google_model', {
+    'auth_code': fields.String(description="The google auth code.", required=True)
+})
+
+@name_space.route('/cred/login_google',methods=['POST'])    
+class loginGoogleRest(Resource):
+    @api.doc(description="Google login function.")
+    @api.expect(loginGoogleAPI)
+    def post(self):
+        global tokens
+        logger.info(">> LOGIN IN GOOGLE")        
+        try:
+            data=json.loads(request.data.decode("utf-8"))
+
+            auth_code = data['auth_code']
+
+            # CLIENT_SECRET_FILE = './client_secret_859549551906-jf6n8pvjgbtp77kolhofv0ge45ucacbg.apps.googleusercontent.com.json'
+
+            
+            credentials = client.credentials_from_clientsecrets_and_code(os.environ["CLIENT_SECRET_FILE"],
+                                                                        ['profile', 'email'],
+                                                                        auth_code)
+
+            # Call Google API
+            
+            http_auth = credentials.authorize(httplib2.Http())
+
+            cleanlogin=credentials.id_token['email']
+
+            try:
+                if elkversion==7:
+                    usr=es.get(index="nyx_user",id=cleanlogin)
+                else:
+                    usr=es.get(index="nyx_user",doc_type="doc",id=cleanlogin)
+            except:
+                logger.info("Not found")
+                usr=None
+                logger.info("Searching by login")
+                body={"size":"100",
+                        "query": {
+                            "bool": {
+                                "must": [
+                                    {
+                                        "term": {
+                                        "login.keyword": {
+                                            "value": cleanlogin,
+                                            "boost": 1
+                                        }
+                                        }
+                                    }                                    
+                                ]
+                                
+                            }
+                        }
+                    }
+                if elkversion==7:
+                    users=es.search(index="nyx_user",body=body)
+                else:
+                    users=es.search(index="nyx_user",doc_type="doc",body=body)
+                #logger.info(users)
+                if "hits" in users and "hits" in users["hits"] and len (users["hits"]["hits"])>0:
+                    usr=users["hits"]["hits"][0]
+
+            logger.info("USR_"*20)
+            logger.info(usr)
+
+            if usr is None:
+                return jsonify({'error':"Bad Credentials"})
+
+
+            token=credentials.access_token
+                        
+            with tokenlock:
+                tokens[str(token)]=usr["_source"]       #TO BE DONE REMOVE PREVIOUS TOKENS OF THIS USER  
+
+            usr["_source"]["password"]=""
+            usr["_source"]["id"]=cleanlogin
+
+            redisserver.set("nyx_tok_"+str(token),json.dumps(usr["_source"]),3600*1)
+
+            apptag="console"
+            if "app" in data:
+                apptag=data["app"]
+
+            finalcategory=computeMenus(usr,str(token),apptag)
+
+            all_priv=[]
+            all_filters=[]
+            if "admin" in usr["_source"]["privileges"] or "user" in usr["_source"]["privileges"]:
+                all_priv=[]
+                all_filters=[]
+
+                all_priv = loadData(es,conn,'nyx_privilege',{},'doc',False,(None, None, None)
+                                                ,True,usr['_source'],None,None,None)['records']
+
+                all_filters = loadData(es,conn,'nyx_filter',{},'doc',False,(None, None, None)
+                                                ,True,usr['_source'],None,None,None)['records']
+
+            resp=make_response(jsonify({'version':VERSION,'error':"",'cred':{'token':token,'user':usr["_source"]},
+                                                        "menus":finalcategory,"all_priv":all_priv,"all_filters":all_filters}))
+            resp.set_cookie('nyx_kibananyx', str(token),secure=True,httponly=True)
+
+            setACookie("nodered",usr["_source"]["privileges"],resp,token)
+            setACookie("anaconda",usr["_source"]["privileges"],resp,token)
+            setACookie("cerebro",usr["_source"]["privileges"],resp,token)
+            setACookie("kibana",usr["_source"]["privileges"],resp,token)
+            setACookie("logs",usr["_source"]["privileges"],resp,token)
+            pushHistoryToELK(request,0,usr["_source"], str(token),"")
+            return resp
+
+
+        except Exception as e:
+            logger.error("Unable to verify auth code.")
+            logger.error(e)    
+            return jsonify({'error':"Bad Request"})
+
+        
+
+
+
+
+
+
+
+
 loginAPI = api.model('login_model', {
     'login': fields.String(description="The user login", required=True),
     'password': fields.String(description="The user password.", required=True),
@@ -1003,7 +1137,7 @@ loginAPI = api.model('login_model', {
 
 @name_space.route('/cred/login',methods=['POST'])    
 class loginRest(Resource):
-    @api.doc(description="Send a message to the broker.")
+    @api.doc(description="login function.")
     @api.expect(loginAPI)
     def post(self):
         global tokens
@@ -2026,7 +2160,7 @@ def messageReceived(destination,message,headers):
 #>> AMQC
 server={"ip":os.environ["AMQC_URL"],"port":os.environ["AMQC_PORT"]
                 ,"login":os.environ["AMQC_LOGIN"],"password":os.environ["AMQC_PASSWORD"]}
-#logger.info(server)                
+logger.info(server)                
 conn=amqstompclient.AMQClient(server
     , {"name":MODULE,"version":VERSION,"lifesign":"/topic/NYX_MODULE_INFO"},['/topic/LOGOUT_EVENT','/topic/NYX_LAMBDA_RESTAPI'],callback=messageReceived)
 #conn,listener= amqHelper.init_amq_connection(activemq_address, activemq_port, activemq_user,activemq_password, "RestAPI",VERSION,messageReceived)
