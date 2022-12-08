@@ -5,7 +5,7 @@ astroid==2.3.1
 attrs==18.2.0
 barcodenumber==0.2.1
 cachetools==3.1.1
-certifi==2018.8.24
+certifi==2022.12.7
 cffi==1.14.0
 chardet==3.0.4
 Click==7.0
