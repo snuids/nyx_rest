@@ -82,9 +82,9 @@ def get_postgres_connection():
 ################################################################################
 def messageReceived(destination,message,headers):
     global es
-    logger.info("==> "*10)
-    logger.info("Message Received %s" % destination)
-    logger.info(message)
+    logger.debug("==> "*10)
+    logger.debug("Message Received %s" % destination)
+    logger.debug(message)
     
     if "LOAD_DATA" in destination:
         mes=json.loads(message)
@@ -111,7 +111,7 @@ def messageReceived(destination,message,headers):
         #res=remoteLoadData(mes)
         sendMail(res,mes)
 
-    logger.info("<== "*10)
+    logger.debug("<== "*10)
 
 ################################################################################
 # Send Mail
