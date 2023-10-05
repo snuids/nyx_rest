@@ -26,6 +26,10 @@ v3.10.1 VME 24/Jun/2020  Add querySize parameter for query selecter
 v3.10.2 AMA 15/Jul/2020  Filters and privileges retrieved for user with the "user" privilege
 v3.11.0 AMA 12/Nov/2020  Cookie flags added: secure=True,httponly=True
 v3.12.0 VME 26/Jul/2021  Google Login
+v3.13.0 VME 27/Jul/2021  Fix bug on status and error (requiring A1 and A2 privileges...)
+v3.14.0 VME 19/Nov/2021  Get endpoint for onfleet webhook creation
+v3.14.1 VME 24/Nov/2021  Modification of the onfleet webhook
+v3.14.2 VME 02/Oct/2023  Creation of the woop deliveries endpoint
 """
 
 import re
@@ -41,10 +45,10 @@ import random
 import string
 import random
 import dateutil
-# import psycopg2
 import requests
 import operator
 import importlib
+# import psycopg2
 
 import threading
 import cachetools
@@ -53,6 +57,7 @@ import os,logging
 import pandas as pd
 import elasticsearch
 from pathlib import Path
+
 from flask import Response
 from functools import wraps
 from flask import send_file
@@ -64,7 +69,7 @@ from importlib import resources
 from common import get_mappings
 
 
-from googleapiclient import discovery
+
 import httplib2
 from oauth2client import client
 
@@ -85,7 +90,7 @@ from common import loadData,applyPrivileges,kibanaData,getELKVersion
 from elasticsearch import Elasticsearch as ES, RequestsHttpConnection as RC
 
 
-VERSION="3.12.0"
+VERSION="3.14.2"
 MODULE="nyx_rest"+"_"+str(os.getpid())
 
 WELCOME=os.environ["WELCOMEMESSAGE"]
@@ -461,6 +466,31 @@ class lambdasRest(Resource):
         return {'error':"No answer"}
 
 #---------------------------------------------------------------------------
+# ONFLEET Get to validate webhook creation
+#---------------------------------------------------------------------------
+@name_space.route('/onfleet_webhook')
+@api.doc(description="When creating a webook in onfleet we need to validate through a Get call.")
+class onfleetWebhookCreation(Resource):    
+    def get(self):
+        check = str(request.args.get('check'))
+        return make_response(check)
+
+    def post(self):
+        req= json.loads(request.data.decode("utf-8"))   
+        
+        logger.info(req)
+
+        conn.send_message("/topic/ONFLEET_WEBHOOK",
+                            json.dumps(req))
+
+        #conn.send_message(req["destination"],req["body"],headers=headers)  
+        return {'error':""}
+
+
+
+
+
+#---------------------------------------------------------------------------
 # API configRest
 #---------------------------------------------------------------------------
 @name_space.route('/config')
@@ -477,7 +507,7 @@ class configRest(Resource):
 @name_space.route('/status')
 @api.doc(description="Get the instance status.",params={'token': 'A valid token'})
 class statusRest(Resource):
-    @token_required("A1","A2")
+    @token_required()
     def get(self,user=None):        
         return {'error':"",'status':'ok','version':VERSION,'name':MODULE}
 
@@ -487,7 +517,7 @@ class statusRest(Resource):
 @name_space.route('/error')
 class errorRest(Resource):    
     @api.doc(description="Error log debug.",params={'token': 'A valid token'})
-    @token_required("A1","A2")
+    @token_required()
     def get(self,user=None):
         logger.error("ERROR")
         return {'error':"",'status':'ok','version':VERSION,'name':MODULE}
@@ -826,7 +856,6 @@ def randomString(stringLength):
     letters = string.ascii_letters
     return ''.join(random.choice(letters) for i in range(stringLength))
 
-
 def get_all_file_paths(directory): 
   
     # initializing empty file paths list 
@@ -1001,11 +1030,9 @@ class loginOAuthRest(Resource):
         return  jsonify({'id': 1,'name':"Arnaud Marchand","email":"amarchand@icloud.com",
                     "created_at":datetime.utcnow(),"access_token":dict["access_token"]})
 
-
-
-
 loginGoogleAPI = api.model('login_google_model', {
-    'auth_code': fields.String(description="The google auth code.", required=True)
+    'auth_code': fields.String(description="The google auth code.", required=True),
+    'app': fields.String(description="The app tag.", required=False)
 })
 
 @name_space.route('/cred/login_google',methods=['POST'])    
@@ -1119,14 +1146,6 @@ class loginGoogleRest(Resource):
             logger.error("Unable to verify auth code.")
             logger.error(e)    
             return jsonify({'error':"Bad Request"})
-
-        
-
-
-
-
-
-
 
 
 loginAPI = api.model('login_model', {
@@ -1856,7 +1875,7 @@ def handleAPICalls():
     global es,userActivities,conn,elkversion
     while True:
         try:
-            logger.info("APIs history")
+            logger.debug("APIs history")
             elkversion=getELKVersion(es)
             with userlock:
                 apis=userActivities[:]
@@ -1884,8 +1903,6 @@ def handleAPICalls():
 
 
         time.sleep(5)
-
-
 
 #---------------------------------------------------------------------------
 # API extLoadDataSource
@@ -2145,8 +2162,8 @@ def get_dict_dashboards(es):
 #=============================================================================
 
 def messageReceived(destination,message,headers):
-    logger.info(">>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>")
-    logger.info("Message Received:"+destination)
+    # logger.info(">>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>")
+    # logger.info("Message Received:"+destination)
 
     if "LOGOUT_EVENT" in destination:
         if message in tokens:
@@ -2189,16 +2206,16 @@ refresh_translations()
 
 logger.info("Scanning files in lib...")
 logger.info("========================")
-try:
-    for ext_lib in os.listdir("lib"):   
-        if ".py" in  ext_lib and "ext" in ext_lib:
-            logger.info("Importing 2:"+ext_lib) 
-            logger.info("lib."+ext_lib.replace(".py","")) 
+# try:
+for ext_lib in os.listdir("lib"):   
+    if ".py" in  ext_lib and "ext" in ext_lib:
+        logger.info("Importing 2:"+ext_lib)
+        logger.info("lib."+ext_lib.replace(".py","")) 
 
-            module = importlib.import_module("lib."+ext_lib.replace(".py",""))
-            module.config(api,conn,es,redisserver,token_required)
-except:
-    logger.info('no lib directory found')
+        module = importlib.import_module("lib."+ext_lib.replace(".py",""))
+        module.config(api,conn,es,redisserver,token_required)
+# except:
+#     logger.info('no lib directory found')
 
 if __name__ != '__main__':
     gunicorn_logger = logging.getLogger("gunicorn.error")
@@ -2211,3 +2228,4 @@ if __name__ != '__main__':
 if __name__ == '__main__':    
     logger.info("AMQC_URL          :"+os.environ["AMQC_URL"])
     app.run(threaded=False,host= '0.0.0.0')
+

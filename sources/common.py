@@ -36,7 +36,6 @@ def get_mappings(es,index):
 
 @cached(cache=TTLCache(maxsize=1024, ttl=300))
 def get_es_info(es):
-    print('get_es_info')
     return es.info()
 
 

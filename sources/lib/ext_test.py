@@ -2,7 +2,7 @@ import logging
 from flask_restplus import Namespace,Api, Resource, fields
 
 
-print("***>"*100)
+print("---"*100)
 
 logger=logging.getLogger()
 
