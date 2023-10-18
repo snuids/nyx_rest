@@ -1,7 +1,9 @@
 import json
 import requests
 import os,logging
-from pytz import timezone
+
+from pytz import timezone, UTC
+from dateutil.parser import isoparse
 from functools import wraps
 from datetime import datetime
 from datetime import timedelta
@@ -17,7 +19,6 @@ logger=logging.getLogger()
 
 ONFLEET_URL_TASK = "https://onfleet.com/api/v2/tasks"
 ONFLEET_APIKEY = os.environ['ONFLEET_APIKEY']
-
 
 
 def config(api,conn,es,redis,token_required):
@@ -77,6 +78,7 @@ def config(api,conn,es,redis,token_required):
                 logger.info(f"trying to delete {task_id}")
                 res=requests.delete(f"{ONFLEET_URL_TASK}/{task_id}", auth=(ONFLEET_APIKEY, ""))   
                 logger.info(res.status_code)         
+                return make_response(jsonify({"error": ""}), 204)
 
             else:
                 logger.info("task not found in onfleet")
@@ -95,7 +97,7 @@ def config(api,conn,es,redis,token_required):
         
         @check_post_parameters("orderId","referenceNumber","retailer","picking","delivery")
         def post(self):
-            # try:
+            try:
                 data=json.loads(request.data.decode("utf-8"))
 
                 task_type = 'woop'
@@ -109,15 +111,15 @@ def config(api,conn,es,redis,token_required):
                 return make_response(jsonify({
                     "error": "",
                     "deliveryId": delivery_task['id'],
-                    "trackingPageUrl":  delivery_task['trackingURL']
+                    "trackingPageUrl":  ""
                 }), 201)
-            # except Exception as e:
-            #     logger.error(e)
-            #     return make_response(jsonify({
-            #                 "reasons": [
-            #                     f"Unhandled error"
-            #                 ]
-            #             }), 400)
+            except Exception as e:
+                logger.error(e)
+                return make_response(jsonify({
+                            "reasons": [
+                                f"Unhandled error"
+                            ]
+                        }), 400)
 
 
 
@@ -159,11 +161,11 @@ tz = timezone('Europe/Paris')
 def create_delivery(delivery_input, task_type, pickup_id=None):
     delivery = delivery_input['delivery']
     
-    start_delivery = tz.localize(datetime.strptime(delivery['interval'][0]['start'], '%Y-%m-%dT%H:%M:%S+0000'))
-    end_delivery   = tz.localize(datetime.strptime(delivery['interval'][0]['end'], '%Y-%m-%dT%H:%M:%S+0000'))
+    start_delivery = isoparse(delivery['interval'][0]['start'])
+    end_delivery = isoparse(delivery['interval'][0]['end'])
     
     
-    address = f"{delivery['address']['addressLine1']} {delivery['address']['postalCode']} {delivery['address']['city']}"
+    address = f"{delivery['location']['addressLine1']} {delivery['location']['postalCode']} {delivery['location']['city']}"
     
     task = {
         "organization": 'CGwZVvB16KfI43EcCR3TqGV~',
@@ -208,11 +210,11 @@ def create_delivery(delivery_input, task_type, pickup_id=None):
 def create_picking(delivery_input, task_type):
     picking = delivery_input['picking']
     
-    start_picking = tz.localize(datetime.strptime(picking['interval'][0]['start'], '%Y-%m-%dT%H:%M:%S+0000'))
-    end_picking   = tz.localize(datetime.strptime(picking['interval'][0]['end'], '%Y-%m-%dT%H:%M:%S+0000'))
+    start_picking = isoparse(picking['interval'][0]['start'])
+    end_picking = isoparse(picking['interval'][0]['end'])
     
     
-    address = f"{picking['address']['addressLine1']} {picking['address']['postalCode']} {picking['address']['city']}"
+    address = f"{picking['location']['addressLine1']} {picking['location']['postalCode']} {picking['location']['city']}"
     
     task = {
         "organization": 'CGwZVvB16KfI43EcCR3TqGV~',
@@ -243,6 +245,11 @@ def create_picking(delivery_input, task_type):
     try:
         res=requests.post(ONFLEET_URL_TASK, auth=(ONFLEET_APIKEY, ""), json=task)
         logger.info(res.status_code)
+
+        if res.status_code>=300:
+            logger.info(res)
+
+
         onfleet_task = res.json()
     except:
         logger.error('unable to create task in onfleet')
