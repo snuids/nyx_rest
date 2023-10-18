@@ -113,3 +113,4 @@ sources/startrest2.sh
 #google auth
 sources/client_secret_*.json
 logs/*
+sources/logs/*
