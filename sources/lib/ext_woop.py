@@ -100,11 +100,33 @@ def config(api,conn,es,redis,token_required):
             try:
                 data=json.loads(request.data.decode("utf-8"))
 
-                task_type = 'woop'
+                logger.info(data)
 
-                picking_task = create_picking(data, task_type)
+                customer = data.get('retailer', {}).get('code', '')
+
+                store_id = ""
+                if customer == 'supermarches-match':
+                    store_id = data.get('retailer', {}).get('store', {}).get('id', '')
+
+                task_type = f"{customer}_{store_id}"
+
+                metadata = [{
+                    "name": "connector",
+                    "type": "string",
+                    "value": "woop"
+                },{
+                    "name": "customer",
+                    "type": "string",
+                    "value": customer
+                },{
+                    "name": "task_type",
+                    "type": "string",
+                    "value": task_type
+                }]
+
+                picking_task = create_picking(data, metadata)
                 picking_task_id = picking_task.get('id', None)
-                delivery_task = create_delivery(data, task_type, pickup_id=picking_task_id)
+                delivery_task = create_delivery(data, metadata, pickup_id=picking_task_id)
 
 
                 logger.info(data)
@@ -158,7 +180,7 @@ def check_post_parameters(*parameters):
 
 tz = timezone('Europe/Paris')
 
-def create_delivery(delivery_input, task_type, pickup_id=None):
+def create_delivery(delivery_input, metadata, pickup_id=None):
     delivery = delivery_input['delivery']
     
     start_delivery = isoparse(delivery['interval'][0]['start'])
@@ -172,11 +194,7 @@ def create_delivery(delivery_input, task_type, pickup_id=None):
         'container': {'type': 'TEAM', 'team': 'zVabf5TnN2er7uvPd9jSUyxJ'},
         "state": 0,
         "pickupTask": False,
-        "metadata": [{
-                        "name": "task_type",
-                        "type": "string",
-                        "value": task_type
-                    }],
+        "metadata": metadata,
         "completeAfter": int(start_delivery.timestamp()*1000),
         "completeBefore": int(end_delivery.timestamp()*1000),
         "recipients": [{
@@ -207,7 +225,7 @@ def create_delivery(delivery_input, task_type, pickup_id=None):
     return onfleet_task
 
 
-def create_picking(delivery_input, task_type):
+def create_picking(delivery_input, metadata):
     picking = delivery_input['picking']
     
     start_picking = isoparse(picking['interval'][0]['start'])
@@ -221,11 +239,7 @@ def create_picking(delivery_input, task_type):
         'container': {'type': 'TEAM', 'team': 'zVabf5TnN2er7uvPd9jSUyxJ'},
         "state": 0,
         "pickupTask": True,
-        "metadata": [{
-                        "name": "task_type",
-                        "type": "string",
-                        "value": task_type
-                    }],
+        "metadata": metadata,
         "completeAfter": int(start_picking.timestamp()*1000),
         "completeBefore": int(end_picking.timestamp()*1000),
         "recipients": [{
