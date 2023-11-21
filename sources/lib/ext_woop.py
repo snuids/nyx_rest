@@ -105,8 +105,10 @@ def config(api,conn,es,redis,token_required):
                 customer = data.get('retailer', {}).get('code', '')
 
                 store_id = ""
+                prefix = ""
                 if customer == 'supermarches-match':
                     store_id = data.get('retailer', {}).get('store', {}).get('id', '')
+                    prefix = "MAT "
 
                 task_type = f"{customer}_{store_id}"
 
@@ -124,9 +126,9 @@ def config(api,conn,es,redis,token_required):
                     "value": task_type
                 }]
 
-                picking_task = create_picking(data, metadata)
+                picking_task = create_picking(data, metadata, prefix)
                 picking_task_id = picking_task.get('id', None)
-                delivery_task = create_delivery(data, metadata, pickup_id=picking_task_id)
+                delivery_task = create_delivery(data, metadata, prefix, pickup_id=picking_task_id)
 
 
                 logger.info(data)
@@ -180,7 +182,7 @@ def check_post_parameters(*parameters):
 
 tz = timezone('Europe/Paris')
 
-def create_delivery(delivery_input, metadata, pickup_id=None):
+def create_delivery(delivery_input, metadata, prefix="", pickup_id=None):
     delivery = delivery_input['delivery']
     
     start_delivery = isoparse(delivery['interval'][0]['start'])
@@ -204,11 +206,13 @@ def create_delivery(delivery_input, metadata, pickup_id=None):
         "destination": {
             "notes": "",
             "address": {
-                "name": f"{address}",
+                "name": f"{prefix}{address}",
                 "unparsed": f"{address}",
             }
         }
     }
+
+    task['notes'] = f"commande : {delivery_input.get('referenceNumber', '')}\r\n"
     
     if pickup_id is not None:
         task['dependencies'] = [pickup_id]
@@ -225,7 +229,7 @@ def create_delivery(delivery_input, metadata, pickup_id=None):
     return onfleet_task
 
 
-def create_picking(delivery_input, metadata):
+def create_picking(delivery_input, metadata, prefix=""):
     picking = delivery_input['picking']
     
     start_picking = isoparse(picking['interval'][0]['start'])
@@ -249,11 +253,14 @@ def create_picking(delivery_input, metadata):
         "destination": {
             "notes": "",
             "address": {
-                "name": f"{address}",
+                "name": f"{prefix}{address}",
                 "unparsed": f"{address}",
             }
         }
     }
+
+    task['notes'] = f"commande : {delivery_input.get('referenceNumber', '')}\r\n"
+
     onfleet_task = None
     res = None
     try:

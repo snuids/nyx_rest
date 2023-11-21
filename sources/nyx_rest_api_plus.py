@@ -32,6 +32,7 @@ v3.14.1 VME 24/Nov/2021  Modification of the onfleet webhook
 v3.14.2 VME 02/Oct/2023  WOOP - Creation of the woop deliveries endpoint
 v3.14.3 VME 18/Oct/2023  WOOP - Fix api bug (date format)
 v3.14.4 VME 21/Nov/2023  WOOP - Add metadata on Onfleet task
+v3.14.5 VME 21/Nov/2023  WOOP - Add order number in task notes
 """
 
 import re
@@ -92,7 +93,7 @@ from common import loadData,applyPrivileges,kibanaData,getELKVersion
 from elasticsearch import Elasticsearch as ES, RequestsHttpConnection as RC
 
 
-VERSION="3.14.4"
+VERSION="3.14.5"
 MODULE="nyx_rest"+"_"+str(os.getpid())
 
 WELCOME=os.environ["WELCOMEMESSAGE"]
