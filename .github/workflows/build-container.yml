@@ -21,7 +21,7 @@ jobs:
 
       - name: Build Docker image
         run: |
-          docker build -t project:latest -f sources/Dockerfile7 .
+          docker build -t project:latest -f Dockerfile7 .
 
       - name: Optionally push to Docker Hub
         run: |        
