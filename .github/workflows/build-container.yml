@@ -1,3 +1,5 @@
+name: Build Docker Container
+
 on:
   push:
     branches:
@@ -19,9 +21,9 @@ jobs:
 
       - name: Build Docker image
         run: |
-          docker build -t project:latest -f DockerImage/Dockerfile2025 .
+          docker build -t project:latest -f sources/Dockerfile7 .
 
-    - name: Optionally push to Docker Hub
+      - name: Optionally push to Docker Hub
         run: |        
           echo "${{ github.event.head_commit.message }}"
           echo "${{ secrets.DOCKER_USERNAME }}"  
