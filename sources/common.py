@@ -8,7 +8,7 @@ import traceback
 import pandas as pd
 from datetime import datetime
 from datetime import timedelta
-from elasticsearch.client import IndicesClient
+from opensearchpy.client import IndicesClient
 
 from cachetools import cached, LRUCache, TTLCache
 
@@ -40,7 +40,11 @@ def get_es_info(es):
 
 
 def getELKVersion(es):
-    return int(get_es_info(es).get('version').get('number').split('.')[0])
+    
+    a= int(get_es_info(es).get('version').get('number').split('.')[0])
+    if a==2: # opensearch
+        return 7
+    return a
 
 def filterReports(res,user):
     logger=logging.getLogger()

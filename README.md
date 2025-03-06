@@ -21,9 +21,9 @@ export AMQC_LOGIN="admin"
 export AMQC_PASSWORD="activemq_pass"
 export AMQC_PORT=61613
 
-export ELK_URL="YOUR_NYX_SERVER"
-export ELK_LOGIN="user"
-export ELK_PASSWORD="ELK_PASS"
+export ELK_URL="127.0.0.1"
+export ELK_LOGIN=""
+export ELK_PASSWORD=""
 export ELK_PORT=9200
 export ELK_SSL=true
 
