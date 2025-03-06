@@ -43,7 +43,7 @@ import uuid
 import flask
 import redis
 import base64
-import prison
+#import prison
 import random
 import string
 import random
@@ -58,7 +58,7 @@ import cachetools
 import subprocess
 import os,logging
 import pandas as pd
-import elasticsearch
+import opensearchpy as elasticsearc
 from pathlib import Path
 
 from flask import Response
@@ -84,16 +84,16 @@ from passlib.hash import pbkdf2_sha256
 from flask import make_response,url_for
 from flask_cors import CORS, cross_origin
 from amqstompclient import amqstompclient
-from flask_restplus import Api, Resource, fields
+from flask_restx import Api, Resource, fields
 from cachetools import cached, LRUCache, TTLCache
 from flask import Flask, jsonify, request,Blueprint
 from logging.handlers import TimedRotatingFileHandler
 from logstash_async.handler import AsynchronousLogstashHandler
 from common import loadData,applyPrivileges,kibanaData,getELKVersion
-from elasticsearch import Elasticsearch as ES, RequestsHttpConnection as RC
+from opensearchpy import OpenSearch as ES, RequestsHttpConnection as RC
 
 
-VERSION="3.14.5"
+VERSION="3.14.6"
 MODULE="nyx_rest"+"_"+str(os.getpid())
 
 WELCOME=os.environ["WELCOMEMESSAGE"]
@@ -608,8 +608,8 @@ def retrieve_app_info(rec_id):
 
             return app['_source']['config']['rootpath'], regex
 
-    except elasticsearch.NotFoundError:
-        logger.warn('Unknown app')
+#    except opensearchpy.NotFoundError:
+#        logger.warn('Unknown app')
     except Exception as e:
         logger.error("Unable to retrive root path of the app")
         logger.error(e)
@@ -1922,7 +1922,7 @@ class esMapping(Resource):
             mappings=[{"id":x,"obj":mappings[x]} for x in mappings if not x.startswith('.')]
             mappings.sort(key=operator.itemgetter('id'))
             return {"error":"","data":mappings}
-        except elasticsearch.NotFoundError:
+        except Exception as e:
             return {"error":"","data":None}
 
 
@@ -2215,8 +2215,12 @@ for ext_lib in os.listdir("lib"):
         logger.info("Importing 2:"+ext_lib)
         logger.info("lib."+ext_lib.replace(".py","")) 
 
-        module = importlib.import_module("lib."+ext_lib.replace(".py",""))
-        module.config(api,conn,es,redisserver,token_required)
+        try:
+            module = importlib.import_module("lib."+ext_lib.replace(".py",""))
+            module.config(api,conn,es,redisserver,token_required)
+        except Exception as e:
+            logger.info(e)
+
 # except:
 #     logger.info('no lib directory found')
 
@@ -2230,5 +2234,5 @@ if __name__ != '__main__':
 
 if __name__ == '__main__':    
     logger.info("AMQC_URL          :"+os.environ["AMQC_URL"])
-    app.run(threaded=False,host= '0.0.0.0')
+    app.run(threaded=False,host= '0.0.0.0',port=5001)
 

@@ -114,3 +114,4 @@ sources/startrest2.sh
 sources/client_secret_*.json
 logs/*
 sources/logs/*
+filldb.sh
