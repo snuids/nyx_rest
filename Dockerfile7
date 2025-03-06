@@ -1,5 +1,5 @@
-FROM python:3.11.-slim
-MAINTAINER snuids
+FROM python:3.11.3-alpine
+LABEL maintainer="snuids,lapin,lamenuiserie"
 
 RUN apt-get update
 RUN apt-get install -y vim
