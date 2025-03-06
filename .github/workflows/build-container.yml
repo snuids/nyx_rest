@@ -14,15 +14,12 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-    - name: Checkout repository
-      uses: actions/checkout@v2
-
-    - name: Set up Docker Buildx
-      uses: docker/setup-buildx-action@v1
+      - name: Checkout code
+        uses: actions/checkout@v2
 
       - name: Build Docker image
         run: |
-          docker build -t project:latest -f Dockerfile7 .
+          docker build -t project:latest -f DockerImage/Dockerfile2025 .
 
     - name: Optionally push to Docker Hub
         run: |        
