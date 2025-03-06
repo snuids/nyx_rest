@@ -5,8 +5,8 @@ COPY ./sources/requirements7.txt /opt/sources/requirements7.txt
 RUN pip install -r /opt/sources/requirements7.txt 
 
 COPY ./sources /opt/sources
-RUN rm -d -r /opt/sources/logs
-RUN rm -d -r /opt/sources/outputs
+RUN rm -d -r -f /opt/sources/logs
+RUN rm -d -r -f /opt/sources/outputs
 RUN mkdir  /opt/sources/logs
 
 WORKDIR /opt/sources
