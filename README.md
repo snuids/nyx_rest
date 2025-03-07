@@ -21,7 +21,7 @@ export AMQC_LOGIN="admin"
 export AMQC_PASSWORD="activemq_pass"
 export AMQC_PORT=61613
 
-export ELK_URL="127.0.0.1"
+export ELK_URL="localhost"
 export ELK_LOGIN=""
 export ELK_PASSWORD=""
 export ELK_PORT=9200
