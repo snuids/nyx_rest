@@ -1290,7 +1290,10 @@ def setACookie(privilege,privileges,resp,token):
     
     if "admin" in privileges or (len(privileges)>0 and privilege in privileges):
         redisserver.set("nyx_"+privilege.lower()+"_"+str(token),"OK",3600*24)
-        resp.set_cookie('nyx_'+privilege.lower(), str(token),secure=True,httponly=True)
+        logger.info("Setting cookie for "+privilege)
+        logger.info(str(token))
+        a=resp.set_cookie('nyx_'+privilege.lower(), str(token),secure=True,httponly=True)
+        logger.info(a)
 
 #---------------------------------------------------------------------------
 # Logout
