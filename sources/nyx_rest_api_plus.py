@@ -93,7 +93,7 @@ from common import loadData,applyPrivileges,kibanaData,getELKVersion
 from opensearchpy import OpenSearch as ES, RequestsHttpConnection as RC
 
 
-VERSION="3.14.12"
+VERSION="3.14.13"
 MODULE="nyx_rest"+"_"+str(os.getpid())
 
 WELCOME=os.environ["WELCOMEMESSAGE"]
@@ -962,7 +962,8 @@ def computeMenus(usr,token,apptag):
 
                 app_to_index = appl.copy()
                 del app_to_index['rec_id']                
-                es.index(index=app['_index'], doc_type=app['_type'], id=app['_id'], body=app_to_index)
+                #es.index(index=app['_index'], doc_type=app['_type'], id=app['_id'], body=app_to_index)
+                es.index(index=app['_index'],  id=app['_id'], body=app_to_index)
 
         if appl["category"] not in categories:
             categories[appl["category"]]={"subcategories":{}}
