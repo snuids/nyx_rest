@@ -93,11 +93,15 @@ from common import loadData,applyPrivileges,kibanaData,getELKVersion
 from opensearchpy import OpenSearch as ES, RequestsHttpConnection as RC
 
 
-VERSION="3.14.6"
+VERSION="3.14.10"
 MODULE="nyx_rest"+"_"+str(os.getpid())
 
 WELCOME=os.environ["WELCOMEMESSAGE"]
 ICON=os.environ["ICON"]
+
+COOKIESECURE=True
+
+    
 
 elkversion=6
 
@@ -141,6 +145,11 @@ logger.info("Starting...")
 logger.info("REST API %s" %(VERSION))
 
 userActivities=[]
+
+if os.environ.get("COOKIESECURE","1")!="1":
+    COOKIESECURE=False
+    logger.warning("Cookie set to unsecure !!!!!!!!!!!!!!!!")
+
 
 app = Flask(__name__, static_folder='temp', static_url_path='/temp')#, static_url_path='/temp')
 blueprint = Blueprint('api', __name__, url_prefix='')
@@ -1142,7 +1151,7 @@ class loginGoogleRest(Resource):
 
             resp=make_response(jsonify({'version':VERSION,'error':"",'cred':{'token':token,'user':usr["_source"]},
                                                         "menus":finalcategory,"all_priv":all_priv,"all_filters":all_filters}))
-            resp.set_cookie('nyx_kibananyx', str(token),secure=True,httponly=True)
+            resp.set_cookie('nyx_kibananyx', str(token),secure=COOKIESECURE,httponly=True)
 
             setACookie("nodered",usr["_source"]["privileges"],resp,token)
             setACookie("anaconda",usr["_source"]["privileges"],resp,token)
@@ -1278,7 +1287,7 @@ class loginRest(Resource):
 
                 resp=make_response(jsonify({'version':VERSION,'error':"",'cred':{'token':token,'user':usr["_source"]},
                                                             "menus":finalcategory,"all_priv":all_priv,"all_filters":all_filters}))
-                resp.set_cookie('nyx_kibananyx', str(token),secure=True,httponly=True)
+                resp.set_cookie('nyx_kibananyx', str(token),secure=COOKIESECURE,httponly=True)
 
                 setACookie("nodered",usr["_source"]["privileges"],resp,token)
                 setACookie("anaconda",usr["_source"]["privileges"],resp,token)
@@ -1300,7 +1309,7 @@ def setACookie(privilege,privileges,resp,token):
         redisserver.set("nyx_"+privilege.lower()+"_"+str(token),"OK",3600*24)
         logger.info("Setting cookie for "+privilege)
         logger.info(str(token))
-        a=resp.set_cookie('nyx_'+privilege.lower(), str(token),secure=True,httponly=True)
+        a=resp.set_cookie('nyx_'+privilege.lower(), str(token),secure=COOKIESECURE,httponly=True)
         logger.info(a)
 
 #---------------------------------------------------------------------------
