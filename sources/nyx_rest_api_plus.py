@@ -43,7 +43,7 @@ import uuid
 import flask
 import redis
 import base64
-#import prison
+import prison
 import random
 import string
 import random
@@ -93,7 +93,7 @@ from common import loadData,applyPrivileges,kibanaData,getELKVersion
 from opensearchpy import OpenSearch as ES, RequestsHttpConnection as RC
 
 
-VERSION="3.14.11"
+VERSION="3.14.12"
 MODULE="nyx_rest"+"_"+str(os.getpid())
 
 WELCOME=os.environ["WELCOMEMESSAGE"]
