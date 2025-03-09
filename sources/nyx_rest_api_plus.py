@@ -93,7 +93,7 @@ from common import loadData,applyPrivileges,kibanaData,getELKVersion
 from opensearchpy import OpenSearch as ES, RequestsHttpConnection as RC
 
 
-VERSION="3.14.13"
+VERSION="3.14.14"
 MODULE="nyx_rest"+"_"+str(os.getpid())
 
 WELCOME=os.environ["WELCOMEMESSAGE"]
@@ -2159,7 +2159,8 @@ def compute_kibana_url(dashboard_dict, appl):
     if dash.get('_source').get('namespace') and dash.get('_source').get('namespace') != 'default':
         space = 's/' + dash.get('_source').get('namespace')
 
-    return ('./kibananyx/'+space+"/app/kibana#"+url)
+    finalurl = ('./kibananyx/'+space+"/app/kibana#"+url).replace("//","/")
+    return finalurl
 
 #---------------------------------------------------------------------------
 # get dictionary of dashboards
