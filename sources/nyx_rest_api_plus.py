@@ -81,7 +81,7 @@ from oauth2client import client
 from pg_common import loadPGData
 from passlib.hash import pbkdf2_sha256
 
-from flask import make_response,url_for
+from flask import make_response,url_for,render_template
 from flask_cors import CORS, cross_origin
 from amqstompclient import amqstompclient
 from flask_restx import Api, Resource, fields
@@ -407,6 +407,14 @@ def pushHistoryToELK(request,timespan,usr,token,error):
     with userlock:
         userActivities.append(rec)        
         
+#---------------------------------------------------------------------------
+# API css
+#---------------------------------------------------------------------------
+@app.route('/test')
+def test():    
+    logger.info("Test")
+    
+    return render_template('test.html') 
 
 #---------------------------------------------------------------------------
 # API css
