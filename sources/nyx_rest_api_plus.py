@@ -92,7 +92,6 @@ from logstash_async.handler import AsynchronousLogstashHandler
 from common import loadData,applyPrivileges,kibanaData,getELKVersion
 from opensearchpy import OpenSearch as ES, RequestsHttpConnection as RC
 
-
 VERSION="3.14.20"
 MODULE="nyx_rest"+"_"+str(os.getpid())
 
