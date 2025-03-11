@@ -16,7 +16,8 @@ from cachetools import cached, LRUCache, TTLCache
 def getAppByID(es,appid):
     logger=logging.getLogger()
     logger.info("Loading APP:>>"+appid)
-    res=es.get("nyx_app",id=appid,doc_type="doc")
+    #res=es.get("nyx_app",id=appid,doc_type="doc")
+    res=es.get("nyx_app",id=appid)
 
     return res
 

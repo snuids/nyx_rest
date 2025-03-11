@@ -51,7 +51,7 @@ import dateutil
 import requests
 import operator
 import importlib
-# import psycopg2
+import psycopg2
 
 import threading
 import cachetools
@@ -1737,7 +1737,7 @@ def pg_genericCRUD(index,col,pkey,user=None):
     logger.info("PG Generic Table="+index+" Col:"+col+" Pkey:"+ pkey+" Method:"+met);    
 
     if met== 'get':   
-        query="select * from "+index+ " where "+col+"="+str(pkey)
+        query="select * from \""+index+ "\" where "+col+"="+str(pkey)
 
         description=None
         with get_postgres_connection().cursor() as cursor:
