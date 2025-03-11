@@ -93,7 +93,7 @@ from common import loadData,applyPrivileges,kibanaData,getELKVersion
 from opensearchpy import OpenSearch as ES, RequestsHttpConnection as RC
 
 
-VERSION="3.14.19"
+VERSION="3.14.20"
 MODULE="nyx_rest"+"_"+str(os.getpid())
 
 WELCOME=os.environ["WELCOMEMESSAGE"]
@@ -1763,7 +1763,7 @@ def pg_genericCRUD(index,col,pkey,user=None):
         data=json.loads(data)
         
         if pkey!="NEW":
-            query="UPDATE "+index+" set "
+            query="UPDATE \""+index+"\" set "
             cols=",".join([""+str(_["key"])+"='"+str(_["value"])+"' " for _ in data["record"]])
             query+=cols
 
@@ -1774,12 +1774,11 @@ def pg_genericCRUD(index,col,pkey,user=None):
                 logger.info(res)
             pg_connection.commit()
         else:
-            query="INSERT INTO "+index+"  "
+            query="INSERT INTO \""+index+"\"  "
             cols=",".join([""+str(_["key"])+"" for _ in data["record"]])
             query+="("+cols+") VALUES ("
             vals=",".join(["'"+str(_["value"])+"'" for _ in data["record"]])
             query+=vals+")"
-            logger.info("COUCOUC"*40)
             logger.info(query)
             with get_postgres_connection().cursor() as cursor:
                 res=cursor.execute(query)
@@ -1791,7 +1790,7 @@ def pg_genericCRUD(index,col,pkey,user=None):
     elif met== 'delete':
         try:
             with pg_connection.cursor() as cursor:
-                query="delete from "+index+ " where "+col+"="+str(pkey)
+                query="delete from \""+index+ "\" where "+col+"="+str(pkey)
                 cursor.execute(query)
 #                res=cursor.fetchone()
 #                logger.info(res)
