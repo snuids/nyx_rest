@@ -1294,6 +1294,7 @@ class loginRest(Resource):
                 setACookie("nodered",usr["_source"]["privileges"],resp,token)
                 setACookie("anaconda",usr["_source"]["privileges"],resp,token)
                 setACookie("cerebro",usr["_source"]["privileges"],resp,token)
+                setACookie("grafana",usr["_source"]["privileges"],resp,token)
                 setACookie("kibana",usr["_source"]["privileges"],resp,token)
                 setACookie("logs",usr["_source"]["privileges"],resp,token)
 
@@ -1327,6 +1328,7 @@ class logout(Resource):
         redisserver.delete("nyx_tok_"+str(token))
         redisserver.delete("nyx_nodered_"+str(token))
         redisserver.delete("nyx_cerebro_"+str(token))
+        redisserver.delete("nyx_grafana_"+str(token))
         redisserver.delete("nyx_kibana_"+str(token))
         redisserver.delete("nyx_anaconda_"+str(token))
         redisserver.delete("nyx_logs_"+str(token))
