@@ -1157,6 +1157,7 @@ class loginGoogleRest(Resource):
             setACookie("nodered",usr["_source"]["privileges"],resp,token)
             setACookie("anaconda",usr["_source"]["privileges"],resp,token)
             setACookie("cerebro",usr["_source"]["privileges"],resp,token)
+            setACookie("grafana",usr["_source"]["privileges"],resp,token)
             setACookie("kibana",usr["_source"]["privileges"],resp,token)
             setACookie("logs",usr["_source"]["privileges"],resp,token)
             pushHistoryToELK(request,0,usr["_source"], str(token),"")
