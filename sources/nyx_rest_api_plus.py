@@ -583,6 +583,7 @@ listdirAPI = api.model('listdir_model', {
     'path': fields.String(description="The relative path of the application.", required=True)
 })
 
+
 @name_space.route('/listdir')
 class listDir(Resource):
     @token_required()
