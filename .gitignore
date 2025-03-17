@@ -115,3 +115,5 @@ sources/client_secret_*.json
 logs/*
 sources/logs/*
 filldb.sh
+.vscode/launch.json
+sources/.vscode/settings.json
