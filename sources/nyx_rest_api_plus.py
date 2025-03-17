@@ -71,6 +71,13 @@ from datetime import timedelta
 from importlib import resources
 from common import get_mappings
 
+from helpers.disk_helper import list_dir
+
+from dotenv import load_dotenv
+load_dotenv()
+
+dirs=list_dir("/tmp/","/tmp",".*\.log")
+
 
 
 import httplib2
@@ -588,8 +595,11 @@ class listDir(Resource):
         path = req['path']
 
 
-
-        prepath, regex = retrieve_app_info(req['rec_id'])
+        if req['rec_id'] == -1:
+            prepath="/"
+            regex=".*\.log$"
+        else:
+            prepath, regex = retrieve_app_info(req['rec_id'])
 
         if prepath is None:
             return {'error':"unknown app"}
@@ -631,55 +641,6 @@ def retrieve_app_info(rec_id):
         logger.error(e)
 
     return None
-
-def list_dir(dir_path, rel_path, regex):
-    try:
-        dir_list = os.listdir(dir_path)
-        
-        ret = []        
-        for i in dir_list:
-            path = os.path.abspath(dir_path+'/'+i)
-            print(path)
-
-            stats = os.stat(path)
-            obj_name = path.split('/')[-1]
-
-            extension = 'dir'
-            if os.path.isfile(path):
-                obj_type = 'file'
-
-                if regex != '':
-                    z = re.match(regex, obj_name)
-
-                    if z is None:
-                        continue
-
-                extension = obj_name.split('.')[-1]
-
-            if os.path.isdir(path):
-                obj_type = 'dir'
-
-            obj = {
-                'path' : (rel_path+'/'+i).replace('//','/'),
-                'creation_time' : int(stats.st_ctime),
-                'modification_time' : int(stats.st_mtime),
-                'name' : obj_name,
-                'type' : obj_type,
-                'size' : stats.st_size,
-                'extension' : extension 
-            }
-
-            ret.append(obj)
-                
-        return {'error':"", 'data':ret}
-            
-    except FileNotFoundError:
-        logger.error(f"the directory {dir_path} doesnt exist")
-        return {'error':"the directory doesnt exist"}
-    except NotADirectoryError:
-        logger.error(f"{dir_path} is not a directory")
-        return {'error':"not a directory"}
-
 
 
 #---------------------------------------------------------------------------
@@ -904,6 +865,38 @@ class reloadConfig(Resource):
         
         return {'version':VERSION,'error':"",'cred':{'token':token,'user':user},"menus":finalcategory}
 
+def read_last_bytes(file_path, num_bytes):
+    with open(file_path, 'rb') as f:
+        try:
+            f.seek(-num_bytes, os.SEEK_END)
+            return f.read()
+        except IOError:
+            return f.read()
+        return f.read()
+
+#---------------------------------------------------------------------------
+# API reloadConfiguration
+#---------------------------------------------------------------------------
+@name_space.route('/streamfile')
+class streamFile(Resource):
+    @api.doc(description="Stream file.",params={'token': 'A valid token'})
+    @token_required()
+    def get(self,user=None):
+        logger.info(user)
+        #token=request.args["token"]
+        file_path=token=request.args["file"]
+        
+        if not os.path.isfile(file_path):
+            return {"data": "", "error": "File not found"}
+
+        try:
+            data = read_last_bytes(file_path, 32000)
+            return {"data": data.decode('utf-8', errors='ignore'), "error": ""}
+        except Exception as e:
+            logger.error(f"Error reading file: {e}")
+            return {"data": "", "error": "Error reading file"}
+        
+        return {"data":"tamere","error":""}
 
 def computeMenus(usr,token,apptag):
     
