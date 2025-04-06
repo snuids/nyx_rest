@@ -282,7 +282,7 @@ def loadPGData(es,appid,pgconn,conn,data,download,is_rest_api,user,outputformat,
 #     #logger.info(df.columns)
 
     if outputformat=="xlsx":
-        writer = pd.ExcelWriter(OUTPUT_FOLDER+outputname, engine='xlsxwriter',options={'remove_timezone': True})   
+        writer = pd.ExcelWriter(OUTPUT_FOLDER+outputname, engine='xlsxwriter',engine_kwargs={'options':{'remove_timezone': True}})   
         df.to_excel(writer, sheet_name=app["_source"]["config"]["index"],index=False)
         worksheet = writer.sheets[app["_source"]["config"]["index"]]  # pull worksheet object
         for idx, col in enumerate(df):  # loop through all columns
