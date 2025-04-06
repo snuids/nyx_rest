@@ -58,6 +58,7 @@ rsa==4.9
 simple-websocket==1.1.0
 six==1.17.0
 stomp.py==8.2.0
+XlsxWriter==3.2.2
 types-python-dateutil==2.9.0.20241206
 typing_extensions==4.12.2
 tzdata==2025.1
