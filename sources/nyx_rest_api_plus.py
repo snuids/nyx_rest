@@ -99,7 +99,7 @@ from logstash_async.handler import AsynchronousLogstashHandler
 from common import loadData,applyPrivileges,kibanaData,getELKVersion
 from opensearchpy import OpenSearch as ES, RequestsHttpConnection as RC
 
-VERSION="3.14.20"
+VERSION="3.14.24"
 MODULE="nyx_rest"+"_"+str(os.getpid())
 
 WELCOME=os.environ["WELCOMEMESSAGE"]
@@ -669,7 +669,11 @@ class files(Resource):
 
         logger.info(f"path    : {path}")
 
-        prepath, regex = retrieve_app_info(rec_id)
+        if rec_id=='-1':
+            prepath="/"
+            regex=".*\.log$"
+        else:
+            prepath, regex = retrieve_app_info(rec_id)
 
         if prepath is None:
             return {'error':"unknown app"}
@@ -689,7 +693,12 @@ class files(Resource):
             return {'error':'error in file format'}
         elif len(files) == 1:
 
-            objpath = os.path.abspath(f"{dirpath}/{files[0]}")
+
+            if rec_id == '-1':
+                objpath = os.path.abspath(f"{dirpath}")
+                files[0]=files[0].split('/')[-1]
+            else:
+                objpath = os.path.abspath(f"{dirpath}/{files[0]}")
 
             logger.info(f"objpath : {objpath}")
 
@@ -698,7 +707,7 @@ class files(Resource):
 
 
             if os.path.isfile(objpath):
-                return send_file(objpath, attachment_filename=files[0], cache_timeout=5)
+                return flask.send_file(objpath, download_name=files[0])
             elif  os.path.isdir(objpath):
 
                 logger.info(get_all_file_paths(objpath))
@@ -717,7 +726,7 @@ class files(Resource):
                 
                 logger.info(os.path.abspath(f"./zip_folder/{zip_file_name}"))
 
-                ret = send_file(os.path.abspath(f"./zip_folder/{zip_file_name}"), attachment_filename=files[0], cache_timeout=5)
+                ret = send_file(os.path.abspath(f"./zip_folder/{zip_file_name}"), download_name=files[0])
                 ret.content_type = 'zipfile'
                 os.remove(f"./zip_folder/{zip_file_name}")
 
@@ -761,7 +770,7 @@ class files(Resource):
             
             logger.info(os.path.abspath(f"./zip_folder/{zip_file_name}"))
 
-            ret = send_file(os.path.abspath(f"./zip_folder/{zip_file_name}"), attachment_filename=files[0], cache_timeout=5)
+            ret = send_file(os.path.abspath(f"./zip_folder/{zip_file_name}"), download_name==files[0])
 
             os.remove(f"./zip_folder/{zip_file_name}")
             ret.content_type = 'zipfile'
