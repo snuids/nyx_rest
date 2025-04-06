@@ -335,7 +335,7 @@ def loadData(es,conn,index,data,doc_type,download,cui,is_rest_api,user,outputfor
     logger.info(df.columns)
 
     if outputformat=="xlsx":
-        writer = pd.ExcelWriter(OUTPUT_FOLDER+outputname, engine='xlsxwriter',options={'remove_timezone': True})   
+        writer = pd.ExcelWriter(OUTPUT_FOLDER+outputname, engine='xlsxwriter',engine_kwargs={'options':{'remove_timezone': True}})   
         df.to_excel(writer, sheet_name=index.replace("*",""),index=False)
         worksheet = writer.sheets[index.replace("*","")]  # pull worksheet object
         for idx, col in enumerate(df):  # loop through all columns
