@@ -1,3 +1,4 @@
+#marmar.snuids.be:440/?api=http://localhost:5001/api/v1/&user=amarchand@icloud.com&password=bagstage01
 """
 v2.11.0 AMA 31/OCT/2019  Fixed a security issue that occured when the login is the mail address and get tokenized.
 v2.12.0 VME 07/JAN/2020  Send a message to delete a token from all instances of the rest api when Logout.
@@ -955,6 +956,7 @@ def computeMenus(usr,token,apptag):
             if config.get("filtercolumn") is not None and config.get("filtercolumn")!="" and "filters" in usr["_source"] and len(usr["_source"]["filters"])>0:
                 logger.info('compute kibana url for : '+str(appl.get('title')))
                 config["url"]=clean_kibana_url(config.get('url'),config.get("filtercolumn"),usr["_source"]["filters"])
+            logger.info('==> url for #=#'+config["url"]+'#=#')
 
             if old_kibana_url != config.get("url"):
                 logger.warning('the url calculated for app: '+appl.get('title')+' is desync from the database (ES)')
@@ -1269,7 +1271,11 @@ class loginRest(Resource):
                 usr["_source"]["password"]=""
                 usr["_source"]["id"]=data["login"]
 
-                redisserver.set("nyx_tok_"+str(token),json.dumps(usr["_source"]),3600*24)
+                try:
+                    redisserver.set("nyx_tok_"+str(token),json.dumps(usr["_source"]),3600*24)
+                except:
+                    logger.error("Unable to set redis token for "+str(token),exc_info=True)
+                    raise Exception("Unable to set redis token for "+str(token))
 
                 apptag="console"
                 if "app" in data:
@@ -1739,7 +1745,10 @@ def pg_genericCRUD(index,col,pkey,user=None):
     logger.info("PG Generic Table="+index+" Col:"+col+" Pkey:"+ pkey+" Method:"+met);    
 
     if met== 'get':   
-        query="select * from \""+index+ "\" where "+col+"="+str(pkey)
+        if isinstance(pkey,str):        
+            query="select * from \""+index+ "\" where "+col+"='"+str(pkey+"'")
+        else:
+            query="select * from \""+index+ "\" where "+col+"="+str(pkey)
 
         description=None
         with get_postgres_connection().cursor() as cursor:
