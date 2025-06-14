@@ -1,6 +1,7 @@
 FROM python:3.11.3-alpine
 LABEL maintainer="snuids,lapin,lamenuiserie"
 
+
 # Detect architecture and download Microsoft ODBC and tools
 RUN apk add --no-cache curl gnupg sudo && \
     case $(uname -m) in \
@@ -23,6 +24,9 @@ RUN apk add --no-cache curl gnupg sudo && \
     sudo apk add --allow-untrusted mssql-tools18_18.4.1.1-1_$architecture.apk
 
 COPY ./sources/requirements7.txt /opt/sources/requirements7.txt
+
+RUN apt install unixodbc-dev --yes
+
 RUN pip install -r /opt/sources/requirements7.txt 
 
 COPY ./sources /opt/sources
