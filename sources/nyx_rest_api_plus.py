@@ -34,6 +34,7 @@ v3.14.2 VME 02/Oct/2023  WOOP - Creation of the woop deliveries endpoint
 v3.14.3 VME 18/Oct/2023  WOOP - Fix api bug (date format)
 v3.14.4 VME 21/Nov/2023  WOOP - Add metadata on Onfleet task
 v3.14.5 VME 21/Nov/2023  WOOP - Add order number in task notes
+v3.15.0 AMA 14/Jun/2025  Added SQL Server support
 """
 
 import re
@@ -100,7 +101,7 @@ from logstash_async.handler import AsynchronousLogstashHandler
 from common import loadData,applyPrivileges,kibanaData,getELKVersion
 from opensearchpy import OpenSearch as ES, RequestsHttpConnection as RC
 
-VERSION="3.14.26"
+VERSION="3.15.0"
 MODULE="nyx_rest"+"_"+str(os.getpid())
 
 WELCOME=os.environ["WELCOMEMESSAGE"]
