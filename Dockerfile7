@@ -1,6 +1,27 @@
 FROM python:3.11.3-alpine
 LABEL maintainer="snuids,lapin,lamenuiserie"
 
+# Detect architecture and download Microsoft ODBC and tools
+RUN apk add --no-cache curl gnupg sudo && \
+    case $(uname -m) in \
+        x86_64)   architecture="amd64" ;; \
+        arm64)   architecture="arm64" ;; \
+        *) architecture="unsupported" ;; \
+    esac && \
+    if [ "unsupported" = "$architecture" ]; then \
+        echo "Alpine architecture $(uname -m) is not currently supported."; \
+        exit 1; \
+    fi && \
+    curl -O https://download.microsoft.com/download/fae28b9a-d880-42fd-9b98-d779f0fdd77f/msodbcsql18_18.5.1.1-1_$architecture.apk && \
+    curl -O https://download.microsoft.com/download/7/6/d/76de322a-d860-4894-9945-f0cc5d6a45f8/mssql-tools18_18.4.1.1-1_$architecture.apk && \
+    curl -O https://download.microsoft.com/download/fae28b9a-d880-42fd-9b98-d779f0fdd77f/msodbcsql18_18.5.1.1-1_$architecture.sig && \
+    curl -O https://download.microsoft.com/download/7/6/d/76de322a-d860-4894-9945-f0cc5d6a45f8/mssql-tools18_18.4.1.1-1_$architecture.sig && \
+    curl https://packages.microsoft.com/keys/microsoft.asc  | gpg --import - && \
+    gpg --verify msodbcsql18_18.5.1.1-1_$architecture.sig msodbcsql18_18.5.1.1-1_$architecture.apk && \
+    gpg --verify mssql-tools18_18.4.1.1-1_$architecture.sig mssql-tools18_18.4.1.1-1_$architecture.apk && \
+    sudo apk add --allow-untrusted msodbcsql18_18.5.1.1-1_$architecture.apk && \
+    sudo apk add --allow-untrusted mssql-tools18_18.4.1.1-1_$architecture.apk
+
 COPY ./sources/requirements7.txt /opt/sources/requirements7.txt
 RUN pip install -r /opt/sources/requirements7.txt 
 

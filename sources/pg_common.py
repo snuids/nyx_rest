@@ -1,3 +1,4 @@
+import os
 import json
 import uuid
 import pytz
@@ -6,11 +7,33 @@ import logging
 import datetime
 import traceback
 import pandas as pd
+import pyodbc
 #from datetime import datetime
 from datetime import timedelta
 from cachetools import cached, LRUCache, TTLCache
 
+sql_server_connections={}
 
+def create_sql_server_connection(config):
+    logger=logging.getLogger()
+    logger.info("Creating SQL Server connection")
+    try:
+        
+        server=os.environ.get("SQLSERVER_HOST", "NA")
+        user=os.environ.get("SQLSERVER_LOGIN", "NA")
+        password=os.environ.get("SQLSERVER_PASSWORD", "NA")
+        database=config["database"]
+        port=int(os.environ.get("SQLSERVER_PORT", "1433"))
+    
+        connectionString = f'DRIVER={{ODBC Driver 18 for SQL Server}};SERVER={server};DATABASE={database};UID={user};PWD={password};PORT={port};TrustServerCertificate=yes;'
+        logger.info("Connection String: "+connectionString)
+        conn = pyodbc.connect(connectionString)
+
+        return conn
+    except Exception as e:
+        logger.error("Error creating SQL Server connection", exc_info=True)
+        logger.error(e)
+        return None
 
 @cached(cache=TTLCache(maxsize=1024, ttl=30))
 def getAppByID(es,appid):
@@ -25,6 +48,7 @@ def getAppByID(es,appid):
 
 def loadPGData(es,appid,pgconn,conn,data,download,is_rest_api,user,outputformat,OUTPUT_URL,OUTPUT_FOLDER):
     logger=logging.getLogger()
+    sql_server_connection=None
     start=datetime.datetime.now().timestamp()
 
     logger.info("LOAD PG DATA:"+appid)
@@ -39,6 +63,18 @@ def loadPGData(es,appid,pgconn,conn,data,download,is_rest_api,user,outputformat,
     app=getAppByID(es,appid)
 
     query=app["_source"]["config"]["sql"]
+
+    dbtype=app["_source"]["config"]["databaseType"]
+    logger.info("Database Type:"+dbtype)
+    
+    if dbtype =="sqlserver" and  app["_source"]["config"]["database"]=="" or app["_source"]["config"]["database"] is None:
+        logger.error("Database not defined in app config.")
+        return {'error':"Database not defined in app config."}
+    
+    if dbtype == "sqlserver" and dbtype not in sql_server_connections:
+        sql_server_connections[dbtype]=create_sql_server_connection(app["_source"]["config"])
+    if dbtype == "sqlserver":
+        sql_server_connection=sql_server_connections[dbtype]
 
     if data != None and "query" in data:
         if len(data["query"])>0:
@@ -65,11 +101,12 @@ def loadPGData(es,appid,pgconn,conn,data,download,is_rest_api,user,outputformat,
         if "timefield" in app["_source"]["config"]:
             timecol=app["_source"]["config"]["timefield"]
 
-            zone=pytz.timezone(tzlocal.get_localzone().zone)
+            zone=tzlocal.get_localzone()
             
-            rangequery=timecol+" >= '"+datetime.datetime.fromtimestamp(startr/1000,zone).isoformat()+"' and "+timecol+" <= '"+datetime.datetime.fromtimestamp(endr/1000,zone).isoformat()+"'"
-
+            #rangequery=timecol+" >= '"+datetime.datetime.fromtimestamp(startr/1000,tz=zone).isoformat()+"' and "+timecol+" <= '"+datetime.datetime.fromtimestamp(endr/1000,tz=zone).isoformat()+"'"
+            #.strftime('%Y-%m-%d %H:%M:%S %Z%z')
             
+            rangequery=timecol+" >= '"+datetime.datetime.fromtimestamp(startr/1000,tz=zone).strftime('%Y-%m-%d %H:%M:%S')+"' and "+timecol+" <= '"+datetime.datetime.fromtimestamp(endr/1000,tz=zone).strftime('%Y-%m-%d %H:%M:%S')+"'"
 
             if "where" in query.lower():
                 if "group" in query.lower():
@@ -101,73 +138,147 @@ def loadPGData(es,appid,pgconn,conn,data,download,is_rest_api,user,outputformat,
     if "graphicChecked" in app["_source"] and app["_source"]["graphicChecked"]:
 
         totalminutes=(endr-startr)/(1000*60)
-        if totalminutes<5:
-            aggtime="second"
-            aggtimeval=1
-        elif totalminutes<240:
-            aggtime="minute"
-            aggtimeval=60
-        elif totalminutes<5*60*24:
-            aggtime="hour"
-            aggtimeval=60*60
-        elif totalminutes<40*60*28:
-            aggtime="day"
-            aggtimeval=60*60*24            
+        if dbtype=="sqlserver":
+            if totalminutes<2:
+                aggtime="second"
+                aggtimeval=1
+            elif totalminutes<240:
+                aggtime="minute"
+                aggtimeval=60
+            elif totalminutes<5*60*24:
+                aggtime="hour"
+                aggtimeval=60*60
+            elif totalminutes<40*60*28:
+                aggtime="day"
+                aggtimeval=60*60*24            
+            else:
+                aggtime="week"            
+                aggtimeval=60*60*24*7            
+
+            dategrp=f"DATEADD({aggtime}, DATEDIFF({aggtime}, 0, {app['_source']['config']['timefield']}), 0) "
+            sqlcounthist=sqlcount[0:len("select")]+f" count(*),{dategrp} AS datein "+sqlcount[queryfrom:]+f" GROUP BY {dategrp}"
+            #sqlcounthist=sqlcount[0:len("select")]+" count(*),date_trunc('"+aggtime+"',"+app["_source"]["config"]["timefield"]+") as datein "+sqlcount[queryfrom:]+ " GROUP BY datein"
+            aggtime="1"+aggtime[0]
         else:
-            aggtime="week"            
-            aggtimeval=60*60*24*7            
+            if totalminutes<5:
+                aggtime="second"
+                aggtimeval=1
+            elif totalminutes<240:
+                aggtime="minute"
+                aggtimeval=60
+            elif totalminutes<5*60*24:
+                aggtime="hour"
+                aggtimeval=60*60
+            elif totalminutes<40*60*28:
+                aggtime="day"
+                aggtimeval=60*60*24            
+            else:
+                aggtime="week"            
+                aggtimeval=60*60*24*7            
 
 
-        sqlcounthist=sqlcount[0:len("select")]+" count(*),date_trunc('"+aggtime+"',"+app["_source"]["config"]["timefield"]+") as datein "+sqlcount[queryfrom:]+ " GROUP BY datein"
-        aggtime="1"+aggtime[0]
+            sqlcounthist=sqlcount[0:len("select")]+" count(*),date_trunc('"+aggtime+"',"+app["_source"]["config"]["timefield"]+") as datein "+sqlcount[queryfrom:]+ " GROUP BY datein"
+            aggtime="1"+aggtime[0]
 
 
     count=0
 
     aggs=None
 
-    with pgconn.cursor() as cursor:
-        logger.info(sqlcount2)
-        cursor.execute(sqlcount2)
-        if "group" in sqlcount2.lower():
-            ress=cursor.fetchall()
-            count=len(ress)
-        else:
-            res=cursor.fetchone()
-            count=res[0]
+    if dbtype=="sqlserver":
+        with sql_server_connection.cursor() as cursor:
+            logger.info(sqlcount2)
+            cursor.execute(sqlcount2)
+            if "group" in sqlcount2.lower():
+                ress=cursor.fetchall()
+                count=len(ress)
+            else:
+                res=cursor.fetchone()
+                count=res[0]
 
 
-        if len(sqlcounthist)>0:
-            logger.info(sqlcounthist)
-            cursor.execute(sqlcounthist)    
-            arecs = cursor.fetchall()   
+            if len(sqlcounthist)>0:
+                logger.info(sqlcounthist)
+                cursor.execute(sqlcounthist)    
+                arecs = cursor.fetchall()   
+                
+                aggs=[]
+                for rec in arecs:
+                    obj={"doc_count":rec[0],"key":int(rec[1].timestamp()*1000),"key_as_string":rec[1].isoformat()}
+                    aggs.append(obj)
+                aggs={"2":{"buckets":aggs}}
+
+            #logger.info(res)
+
+            offset=""
+
             
-            aggs=[]
-            for rec in arecs:
-                obj={"doc_count":rec[0],"key":int(rec[1].timestamp()*1000),"key_as_string":rec[1].isoformat()}
-                aggs.append(obj)
-            aggs={"2":{"buckets":aggs}}
 
-        #logger.info(res)
+            order=""
+            if data!=None and "sort" in data and "column" in data["sort"]:
+                order=" ORDER BY "+data["sort"]["column"]
+                if "order" in data["sort"] and data["sort"]["order"]=="descending":
+                    order+=" DESC "
+                #page=data["page"]
+    
 
-        offset=""
+            #cursor.execute(query+order+" LIMIT "+str(maxsize)+offset)    
+            sqlstr=query+order
+            if page!=1:
+                offset=" OFFSET %d ROWS FETCH FIRST %s ROWS ONLY" %((page-1)*maxsize,maxsize)
+                if " order by " not in sqlstr.lower():
+                    sqlstr=sqlstr+" order by 1 "
+                sqlstr+=offset
+            else:
+                sqlstr=sqlstr.replace("select ","select TOP "+str(maxsize)+offset+" ")
+            cursor.execute(sqlstr)    
+            recs = cursor.fetchall() 
+            colnames = [desc[0] for desc in cursor.description]
 
-        if page!=1:
-            offset=" OFFSET %d" %((page-1)*maxsize)
+        sql_server_connection.commit()
+    else:
+        with pgconn.cursor() as cursor:
+            logger.info(sqlcount2)
+            cursor.execute(sqlcount2)
+            if "group" in sqlcount2.lower():
+                ress=cursor.fetchall()
+                count=len(ress)
+            else:
+                res=cursor.fetchone()
+                count=res[0]
 
-        order=""
-        if data!=None and "sort" in data and "column" in data["sort"]:
-            order=" ORDER BY "+data["sort"]["column"]
-            if "order" in data["sort"] and data["sort"]["order"]=="descending":
-                order+=" DESC "
-            #page=data["page"]
- 
 
-        cursor.execute(query+order+" LIMIT "+str(maxsize)+offset)    
-        recs = cursor.fetchall() 
-        colnames = [desc[0] for desc in cursor.description]
+            if len(sqlcounthist)>0:
+                logger.info(sqlcounthist)
+                cursor.execute(sqlcounthist)    
+                arecs = cursor.fetchall()   
+                
+                aggs=[]
+                for rec in arecs:
+                    obj={"doc_count":rec[0],"key":int(rec[1].timestamp()*1000),"key_as_string":rec[1].isoformat()}
+                    aggs.append(obj)
+                aggs={"2":{"buckets":aggs}}
 
-    pgconn.commit()
+            #logger.info(res)
+
+            offset=""
+
+            if page!=1:
+                offset=" OFFSET %d" %((page-1)*maxsize)
+
+            order=""
+            if data!=None and "sort" in data and "column" in data["sort"]:
+                order=" ORDER BY "+data["sort"]["column"]
+                if "order" in data["sort"] and data["sort"]["order"]=="descending":
+                    order+=" DESC "
+                #page=data["page"]
+    
+
+            cursor.execute(query+order+" LIMIT "+str(maxsize)+offset)    
+            recs = cursor.fetchall() 
+            colnames = [desc[0] for desc in cursor.description]
+
+        pgconn.commit()
 
     pkey="_id"
     if "pkey" in app["_source"]["config"]:
@@ -204,8 +315,12 @@ def loadPGData(es,appid,pgconn,conn,data,download,is_rest_api,user,outputformat,
     took=int((datetime.datetime.now().timestamp()-start)/1000)    
 
     if not download:
-        return {'error':"","took":took
-                ,"total":count,"records":hits,"colnames":[{"col":x[0],"type":x[1]} for x in cursor.description], "aggs":aggs,"aggtimeval":aggtimeval,"aggtime":aggtime}    
+        if dbtype!="sqlserver":
+            return {'error':"","took":took
+                    ,"total":count,"records":hits,"colnames":[{"col":x[0],"type":x[1]} for x in cursor.description], "aggs":aggs,"aggtimeval":aggtimeval,"aggtime":aggtime}    
+        else:
+            return {'error':"","took":took
+                    ,"total":count,"records":hits,"colnames":[{"col":x[0],"type":x[4]} for x in cursor.description], "aggs":aggs,"aggtimeval":aggtimeval,"aggtime":aggtime}    
 
     exportcolumns=None
     
@@ -242,7 +357,7 @@ def loadPGData(es,appid,pgconn,conn,data,download,is_rest_api,user,outputformat,
 ### GET MAPPING
     datescol={}
     try:
-        containertimezone=pytz.timezone(tzlocal.get_localzone().zone)
+        containertimezone=pytz.timezone(str(tzlocal.get_localzone().zone))
 
         map=[desc for desc in cursor.description]
         for m in map:
