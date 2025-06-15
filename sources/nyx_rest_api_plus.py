@@ -87,7 +87,7 @@ from oauth2client import client
 
 
 
-from pg_common import loadPGData
+from pg_common import loadPGData,getAppByID,get_sql_server_connection
 from passlib.hash import pbkdf2_sha256
 
 from flask import make_response,url_for,render_template
@@ -1745,6 +1745,13 @@ def pg_genericCRUD(index,col,pkey,user=None):
     met=request.method.lower()
     logger.info("PG Generic Table="+index+" Col:"+col+" Pkey:"+ pkey+" Method:"+met);    
 
+    app=request.args.get("app",None)
+    db_type="postgres"
+    ap=None
+    if app is not None:
+        ap=getAppByID(es,app)
+        if ap is not None:
+            db_type=ap["_source"]["config"].get("databaseType","postgres")
     if met== 'get':   
         if isinstance(pkey,str):        
             query="select * from \""+index+ "\" where "+col+"='"+str(pkey+"'")
@@ -1752,21 +1759,50 @@ def pg_genericCRUD(index,col,pkey,user=None):
             query="select * from \""+index+ "\" where "+col+"="+str(pkey)
 
         description=None
-        with get_postgres_connection().cursor() as cursor:
-            cursor.execute(query)
-            res=cursor.fetchone()
-            description=[{"col":x[0],"type":x[1]} for x in cursor.description]
-            
-            res2={}
-            for index,x in enumerate(cursor.description):
-                if x[1] in [1082,1184,1114]:
-                    print(res[index])
-                    res2[x[0]]=res[index].isoformat()
+        
+        if db_type=="sqlserver":
+
+            def convert_sql_server_type_to_python_type(sql_type):
+                if sql_type == "int":
+                    return 23
+                elif sql_type == "str":
+                    return 1043
+                elif sql_type == "datetime":
+                    return 1184
                 else:
-                    res2[x[0]]=res[index]
-                res2[x[0]+"_$type"]=x[1]
+                    return -1
+
+            sqconn=get_sql_server_connection(ap)
+            with sqconn.cursor() as cursor:
+                cursor.execute(query)
+                res=cursor.fetchone()
+                description=[{"col":x[0],"type":convert_sql_server_type_to_python_type(x[1].__name__)} for x in cursor.description]
                 
-        pg_connection.commit()
+                res2={}
+                for index,x in enumerate(cursor.description):
+                    if x[1] in [1082,1184,1114]:
+                        print(res[index])
+                        res2[x[0]]=res[index].isoformat()
+                    else:
+                        res2[x[0]]=res[index]
+                    res2[x[0]+"_$type"]=convert_sql_server_type_to_python_type(x[1].__name__)
+            sqconn.commit()
+        else:
+            with get_postgres_connection().cursor() as cursor:
+                cursor.execute(query)
+                res=cursor.fetchone()
+                description=[{"col":x[0],"type":x[1]} for x in cursor.description]
+                
+                res2={}
+                for index,x in enumerate(cursor.description):
+                    if x[1] in [1082,1184,1114]:
+                        print(res[index])
+                        res2[x[0]]=res[index].isoformat()
+                    else:
+                        res2[x[0]]=res[index]
+                    res2[x[0]+"_$type"]=x[1]
+                    
+            pg_connection.commit()
         return {'error':"","data":res2,"columns":description}
     elif met== 'post':
         data= request.data.decode("utf-8")        
