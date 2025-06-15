@@ -34,6 +34,21 @@ def create_sql_server_connection(config):
         logger.error("Error creating SQL Server connection", exc_info=True)
         logger.error(e)
         return None
+    
+def get_sql_server_connection(app):
+    """
+    Retrieve or create a SQL Server connection for the given app config.
+    """
+    dbtype = app["_source"]["config"]["databaseType"]
+    datab = app["_source"]["config"]["database"]
+    if dbtype == "sqlserver" and (datab == "" or datab is None):
+        logging.getLogger().error("Database not defined in app config.")
+        return None
+    if dbtype == "sqlserver" and datab not in sql_server_connections:
+        sql_server_connections[datab] = create_sql_server_connection(app["_source"]["config"])
+    if dbtype == "sqlserver":
+        return sql_server_connections[datab]
+    return None
 
 @cached(cache=TTLCache(maxsize=1024, ttl=30))
 def getAppByID(es,appid):
@@ -66,15 +81,10 @@ def loadPGData(es,appid,pgconn,conn,data,download,is_rest_api,user,outputformat,
 
     dbtype=app["_source"]["config"]["databaseType"]
     logger.info("Database Type:"+dbtype)
-    
-    if dbtype =="sqlserver" and  app["_source"]["config"]["database"]=="" or app["_source"]["config"]["database"] is None:
-        logger.error("Database not defined in app config.")
-        return {'error':"Database not defined in app config."}
-    
-    if dbtype == "sqlserver" and dbtype not in sql_server_connections:
-        sql_server_connections[dbtype]=create_sql_server_connection(app["_source"]["config"])
     if dbtype == "sqlserver":
-        sql_server_connection=sql_server_connections[dbtype]
+        sql_server_connection=get_sql_server_connection(app)
+    
+        
 
     if data != None and "query" in data:
         if len(data["query"])>0:
