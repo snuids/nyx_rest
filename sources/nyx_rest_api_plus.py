@@ -1996,6 +1996,32 @@ class esMapping(Resource):
         except Exception as e:
             return {"error":"","data":None}
 
+#---------------------------------------------------------------------------
+# API grafana dashboard
+#---------------------------------------------------------------------------
+@name_space.route('/grafana/dashboards')
+@api.doc(description="Get Grafana Dashboards.",params={'token': 'A valid token'})
+class grafanaDashboards(Resource):    
+    @token_required()
+    def get(self, user=None):
+        GRAFANA_URL = os.environ.get("GRAFANA_URL","")
+        GRAFANA_API_KEY = os.environ.get("GRAFANA_API_KEY","")
+
+        if len(GRAFANA_URL)==0 or len(GRAFANA_API_KEY)==0:
+            logger.error("Grafana URL or API Key not set in environment variables.")
+            return {"error":"","data":[]}
+        else:
+            url = f"{GRAFANA_URL}/api/search?type=dash-db"
+            headers = {
+                "Authorization": f"Bearer {GRAFANA_API_KEY}",
+                "Content-Type": "application/json"
+            }
+            response = requests.get(url, headers=headers)
+            response.raise_for_status()
+            
+            return {"error":"","data":response.json()}
+            
+        
 
 
 #---------------------------------------------------------------------------
@@ -2232,6 +2258,8 @@ def get_dict_dashboards(es):
 
     res=es.search(index=".kibana", body=query, size=10000)
     return {dash['_id'].split(':')[-1]: dash for dash in res['hits']['hits']}
+
+
 
 
 #=============================================================================
