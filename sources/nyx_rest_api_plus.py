@@ -101,6 +101,9 @@ from logstash_async.handler import AsynchronousLogstashHandler
 from common import loadData,applyPrivileges,kibanaData,getELKVersion
 from opensearchpy import OpenSearch as ES, RequestsHttpConnection as RC
 
+from auth.auth_ad import authenticate_ad
+from auth.role_mapper import extract_roles_from_ad
+
 VERSION="3.15.0"
 MODULE="nyx_rest"+"_"+str(os.getpid())
 
@@ -1181,6 +1184,50 @@ loginAPI = api.model('login_model', {
     'app': fields.String(description="The app tag.", required=False)
 })
 
+def finalize_login(usr, data, es, conn):
+    token = uuid.uuid4()
+
+    with tokenlock:
+        tokens[str(token)] = usr["_source"]
+
+    usr["_source"]["password"] = ""
+    usr["_source"]["id"] = data["login"]
+
+    try:
+        redisserver.set("nyx_tok_"+str(token), json.dumps(usr["_source"]), 3600*24)
+    except:
+        logger.error("Unable to set redis token for "+str(token), exc_info=True)
+        raise Exception("Unable to set redis token for "+str(token))
+
+    apptag = data.get("app", "console")
+    finalcategory = computeMenus(usr, str(token), apptag)
+
+    all_priv, all_filters = [], []
+    if "admin" in usr["_source"]["privileges"] or "user" in usr["_source"]["privileges"]:
+        all_priv = loadData(es, conn, 'nyx_privilege', {}, 'doc', False,
+                            (None, None, None), True, usr['_source'],
+                            None, None, None)['records']
+        all_filters = loadData(es, conn, 'nyx_filter', {}, 'doc', False,
+                               (None, None, None), True, usr['_source'],
+                               None, None, None)['records']
+
+    resp = make_response(jsonify({
+        'version': VERSION,
+        'error': "",
+        'cred': {'token': token, 'user': usr["_source"]},
+        "menus": finalcategory,
+        "all_priv": all_priv,
+        "all_filters": all_filters
+    }))
+    resp.set_cookie('nyx_kibananyx', str(token),
+                    secure=COOKIESECURE, httponly=True)
+
+    for app in ["nodered","anaconda","cerebro","grafana","kibana","logs"]:
+        setACookie(app, usr["_source"]["privileges"], resp, token)
+
+    pushHistoryToELK(request, 0, usr["_source"], str(token), "")
+    return resp
+
 @name_space.route('/cred/login',methods=['POST'])    
 class loginRest(Resource):
     @api.doc(description="login function.")
@@ -1263,56 +1310,32 @@ class loginRest(Resource):
                     except:
                         usr=None
                         return jsonify({'error':"Unknown User"})
-
-                token=uuid.uuid4()
-                        
-                with tokenlock:
-                    tokens[str(token)]=usr["_source"]       #TO BE DONE REMOVE PREVIOUS TOKENS OF THIS USER  
-
-                usr["_source"]["password"]=""
-                usr["_source"]["id"]=data["login"]
-
-                try:
-                    redisserver.set("nyx_tok_"+str(token),json.dumps(usr["_source"]),3600*24)
-                except:
-                    logger.error("Unable to set redis token for "+str(token),exc_info=True)
-                    raise Exception("Unable to set redis token for "+str(token))
-
-                apptag="console"
-                if "app" in data:
-                    apptag=data["app"]
-
-                finalcategory=computeMenus(usr,str(token),apptag)
-
-                all_priv=[]
-                all_filters=[]
-                if "admin" in usr["_source"]["privileges"] or "user" in usr["_source"]["privileges"]:
-                    all_priv=[]
-                    all_filters=[]
-
-                    all_priv = loadData(es,conn,'nyx_privilege',{},'doc',False,(None, None, None)
-                                                    ,True,usr['_source'],None,None,None)['records']
-
-                    all_filters = loadData(es,conn,'nyx_filter',{},'doc',False,(None, None, None)
-                                                    ,True,usr['_source'],None,None,None)['records']
-
-                resp=make_response(jsonify({'version':VERSION,'error':"",'cred':{'token':token,'user':usr["_source"]},
-                                                            "menus":finalcategory,"all_priv":all_priv,"all_filters":all_filters}))
-                resp.set_cookie('nyx_kibananyx', str(token),secure=COOKIESECURE,httponly=True)
-
-                setACookie("nodered",usr["_source"]["privileges"],resp,token)
-                setACookie("anaconda",usr["_source"]["privileges"],resp,token)
-                setACookie("cerebro",usr["_source"]["privileges"],resp,token)
-                setACookie("grafana",usr["_source"]["privileges"],resp,token)
-                setACookie("kibana",usr["_source"]["privileges"],resp,token)
-                setACookie("logs",usr["_source"]["privileges"],resp,token)
-
-                pushHistoryToELK(request,0,usr["_source"], str(token),"")
-                return resp
+                return finalize_login(usr, data, es, conn)
             else:
-                return jsonify({'error':"Bad Credentials"})
-
-
+                success, ad_info = authenticate_ad(cleanlogin, data["password"])
+                
+                if success:
+                    privileges = extract_roles_from_ad(ad_info)
+                    logger.info(f"User {cleanlogin} authenticated via AD")
+                    # Create usr object
+                    usr = {
+                        "_source": {
+                            "login": cleanlogin,
+                            "password": "",
+                            "privileges": privileges if privileges else ["user"],
+                            "firstname": ad_info.get("givenName", [""])[0] if ad_info.get("givenName") else "User",
+                            "language": "en",
+                            "conexion_source": "ad",
+                            "id": cleanlogin,
+                            "cn": ad_info.get("cn", [""])[0] if ad_info.get("cn") else "",
+                            "mail": ad_info.get("mail", [""])[0] if ad_info.get("mail") else "",
+                        }
+                    }
+                    logger.info(usr)
+                    return finalize_login(usr, data, es, conn)
+                else:
+                    logger.info(f"Authentication failed for user {cleanlogin}")
+                    return jsonify({'error':"Bad Credentials"})
         return jsonify({'error':"Bad Request"})
 
 def setACookie(privilege,privileges,resp,token):
