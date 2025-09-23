@@ -35,6 +35,7 @@ v3.14.3 VME 18/Oct/2023  WOOP - Fix api bug (date format)
 v3.14.4 VME 21/Nov/2023  WOOP - Add metadata on Onfleet task
 v3.14.5 VME 21/Nov/2023  WOOP - Add order number in task notes
 v3.15.0 AMA 14/Jun/2025  Added SQL Server support
+v3.16.0 JIG 23/Sep/2025  Added AD support
 """
 
 import re
@@ -104,7 +105,7 @@ from opensearchpy import OpenSearch as ES, RequestsHttpConnection as RC
 from auth.auth_ad import authenticate_ad
 from auth.role_mapper import extract_roles_from_ad
 
-VERSION="3.15.0"
+VERSION="3.16.0"
 MODULE="nyx_rest"+"_"+str(os.getpid())
 
 WELCOME=os.environ["WELCOMEMESSAGE"]
@@ -960,7 +961,11 @@ def computeMenus(usr,token,apptag):
             if config.get("filtercolumn") is not None and config.get("filtercolumn")!="" and "filters" in usr["_source"] and len(usr["_source"]["filters"])>0:
                 logger.info('compute kibana url for : '+str(appl.get('title')))
                 config["url"]=clean_kibana_url(config.get('url'),config.get("filtercolumn"),usr["_source"]["filters"])
-            logger.info('==> url for #=#'+config["url"]+'#=#')
+            #logger.info('==> url for #=#'+config["url"]+'#=#')
+            try:
+                logger.info('==> url for #=#'+config["url"]+'#=#')
+            except:
+                logger.error('==> url for #=#'+str(config)+'#=#')
 
             if old_kibana_url != config.get("url"):
                 logger.warning('the url calculated for app: '+appl.get('title')+' is desync from the database (ES)')
