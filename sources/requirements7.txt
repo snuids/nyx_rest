@@ -37,6 +37,7 @@ opensearch-py==2.8.0
 packaging==24.2
 pandas==2.2.3
 passlib==1.7.4
+pycryptodome==3.23.0
 prison==0.2.1
 psycopg2-binary==2.9.10
 pyasn1==0.6.1
