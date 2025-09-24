@@ -54,7 +54,7 @@ pytz==2025.1
 pyodbc==5.2.0
 redis==5.2.1
 referencing==0.36.2
-requests==2.32.3
+requests==2.32.4
 rpds-py==0.23.1
 rsa==4.9
 simple-websocket==1.1.0
