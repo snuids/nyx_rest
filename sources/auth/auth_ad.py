@@ -52,6 +52,8 @@ def authenticate_ad(username, password):
                 if success and conn.entries:
                     # entry_attributes_as_dict returns a dict of attribute -> list/values
                     user_info = conn.entries[0].entry_attributes_as_dict
+                    logger.info(">-"*30)
+                    logger.info(user_info)
                     # optionally include the DN
                     user_info['distinguishedName'] = str(conn.entries[0].entry_dn)
                     conn.unbind()
