@@ -36,6 +36,7 @@ v3.14.4 VME 21/Nov/2023  WOOP - Add metadata on Onfleet task
 v3.14.5 VME 21/Nov/2023  WOOP - Add order number in task notes
 v3.15.0 AMA 14/Jun/2025  Added SQL Server support
 v3.16.0 JIG 23/Sep/2025  Added AD support
+v3.17.0 AMA 26/Sep/2025  Create Kibana short url
 """
 
 import re
