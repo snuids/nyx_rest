@@ -955,8 +955,9 @@ def computeMenus(usr,token,apptag):
 
 
             old_kibana_url=config.get("url")
+            old_kibana_shorturl=config.get("shorturl")
 
-            config["url"]=compute_kibana_url(dict_dashboard, appl)
+            config["url"],config["shorturl"]=compute_kibana_url(dict_dashboard, appl)
 
             if config.get("filtercolumn") is not None and config.get("filtercolumn")!="" and "filters" in usr["_source"] and len(usr["_source"]["filters"])>0:
                 logger.info('compute kibana url for : '+str(appl.get('title')))
@@ -967,7 +968,7 @@ def computeMenus(usr,token,apptag):
             except:
                 logger.error('==> url for #=#'+str(config)+'#=#')
 
-            if old_kibana_url != config.get("url"):
+            if old_kibana_url != config.get("url") or old_kibana_shorturl != config.get("shorturl"):
                 logger.warning('the url calculated for app: '+appl.get('title')+' is desync from the database (ES)')
                 logger.warning(config.get("url"))
                 logger.warning(old_kibana_url)
@@ -2184,6 +2185,7 @@ def compute_kibana_url(dashboard_dict, appl):
         return appl.get('config').get('url')
 
     url = "/dashboard/" + appl.get('config')['kibanaId'] + ""
+    shorturl = "/app/dashboards#/view/" + appl.get('config')['kibanaId'] + ""
 
     time = "from:now-7d,mode:quick,to:now"
 
@@ -2208,6 +2210,7 @@ def compute_kibana_url(dashboard_dict, appl):
     dash_obj = dash.get('_source').get('dashboard')
 
     url += "?embed=true&_g=("+refresh+",time:(" + time +"))"
+    shorturl+="?embed=true&_g=("+refresh+",time:(" + time +"))"
     url += "&_a=(description:'" + dash_obj.get('description') + "'"
     url += ",filters:!(),fullScreenMode:!f"  
 
@@ -2264,7 +2267,9 @@ def compute_kibana_url(dashboard_dict, appl):
         space = 's/' + dash.get('_source').get('namespace')
 
     finalurl = ('./kibananyx/'+space+"/app/kibana#"+url).replace("//","/")
-    return finalurl
+
+    finalshorturl = ('./kibananyx/'+space+""+shorturl).replace("//","/")
+    return finalurl,finalshorturl
 
 #---------------------------------------------------------------------------
 # get dictionary of dashboards
