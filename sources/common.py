@@ -144,7 +144,7 @@ def loadData(es,conn,index,data,doc_type,download,cui,is_rest_api,user,outputfor
 
     fromval=0
 
-    for key in [agg for agg in data.get("aggs")]:
+    for key in [agg for agg in data.get("aggs",[])]:
         if "date_histogram" in data["aggs"][key] and "interval" in data["aggs"][key]["date_histogram"]:
             data["aggs"][key]["date_histogram"]["fixed_interval"]=data["aggs"][key]["date_histogram"]["interval"]
             del data["aggs"][key]["date_histogram"]["interval"]
