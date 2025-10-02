@@ -36,6 +36,7 @@ v3.14.5 VME 21/Nov/2023  WOOP - Add order number in task notes
 v3.15.0 AMA 14/Jun/2025  Added SQL Server support
 v3.16.0 JIG 23/Sep/2025  Added AD support
 v3.17.0 AMA 26/Sep/2025  Create Kibana short url
+v3.18.0 AMA 26/Sep/2025  Added elastic 8 support
 """
 
 import re
@@ -105,7 +106,7 @@ from opensearchpy import OpenSearch as ES, RequestsHttpConnection as RC
 from auth.auth_ad import authenticate_ad
 from auth.role_mapper import extract_roles_from_ad
 
-VERSION="3.16.0"
+VERSION="3.18.0"
 MODULE="nyx_rest"+"_"+str(os.getpid())
 
 WELCOME=os.environ["WELCOMEMESSAGE"]
@@ -284,7 +285,7 @@ def clean_kibana_url(url,column,filter):
 
 @cached(cache=TTLCache(maxsize=1024, ttl=60))
 def getAPIKey(token):
-    if elkversion==7:
+    if elkversion>=7:
         return es.get(index="nyx_apikey",id=token)
     else:
         return es.get(index="nyx_apikey",id=token,doc_type="_doc")
@@ -443,7 +444,7 @@ def test():
 @app.route('/api/v1/ui_css')
 def cssRest():    
     logger.info("CSS called")
-    if elkversion==7:
+    if elkversion>=7:
         res=es.get(index="nyx_config",id="nyx_css")    
     else:
         res=es.get(index="nyx_config",id="nyx_css",doc_type="doc")    
@@ -627,7 +628,7 @@ class listDir(Resource):
 
 def retrieve_app_info(rec_id):
     try:
-        if elkversion==7:
+        if elkversion>=7:
             app=es.get(index="nyx_app",id=rec_id)
         else:
             app=es.get(index="nyx_app",doc_type="doc",id=rec_id)
@@ -917,7 +918,7 @@ class streamFile(Resource):
 def computeMenus(usr,token,apptag):
     
     refresh_translations()
-    if elkversion==7:
+    if elkversion>=7:
         res3=es.search(size=1000,index="nyx_app",body={"sort" : [{ "order" : "asc" }]})
     else:
         res3=es.search(size=1000,index="nyx_app",doc_type="doc",body={"sort" : [{ "order" : "asc" }]})
@@ -1096,7 +1097,7 @@ class loginGoogleRest(Resource):
             cleanlogin=credentials.id_token['email']
 
             try:
-                if elkversion==7:
+                if elkversion>=7:
                     usr=es.get(index="nyx_user",id=cleanlogin)
                 else:
                     usr=es.get(index="nyx_user",doc_type="doc",id=cleanlogin)
@@ -1121,7 +1122,7 @@ class loginGoogleRest(Resource):
                             }
                         }
                     }
-                if elkversion==7:
+                if elkversion>=7:
                     users=es.search(index="nyx_user",body=body)
                 else:
                     users=es.search(index="nyx_user",doc_type="doc",body=body)
@@ -1249,7 +1250,7 @@ class loginRest(Resource):
             cleanlogin=data["login"].split(">")[0]
 
             try:
-                if elkversion==7:
+                if elkversion>=7:
                     usr=es.get(index="nyx_user",id=cleanlogin)
                 else:
                     usr=es.get(index="nyx_user",doc_type="doc",id=cleanlogin)
@@ -1274,7 +1275,7 @@ class loginRest(Resource):
                             }
                         }
                     }
-                if elkversion==7:
+                if elkversion>=7:
                     users=es.search(index="nyx_user",body=body)
                 else:
                     users=es.search(index="nyx_user",doc_type="doc",body=body)
@@ -1309,7 +1310,7 @@ class loginRest(Resource):
                 if ">" in data["login"] and "admin" in usr["_source"]["privileges"]:
                     otheruser=data["login"].split(">")[1]
                     try:
-                        if elkversion==7:
+                        if elkversion>=7:
                             usr=es.get(index="nyx_user",id=otheruser)
                         else:
                             usr=es.get(index="nyx_user",doc_type="doc",id=otheruser)
@@ -1397,7 +1398,7 @@ class reset_password(Resource):
         logger.info(">>> Reset password");
         req= json.loads(request.data.decode("utf-8"))  
         try:
-            if elkversion==7:
+            if elkversion>=7:
                 usrdb=es.get(index="nyx_user",id=req["login"])
             else:
                 usrdb=es.get(index="nyx_user",doc_type="doc",id=req["login"])
@@ -1405,7 +1406,7 @@ class reset_password(Resource):
             return {"error":"usernotfound"}
             
         usrdb["_source"]["password"]=pbkdf2_sha256.hash(req["new_password"])
-        if elkversion==7:
+        if elkversion>=7:
             res=es.index(index="nyx_user",body=usrdb["_source"],id=req["login"])
         else:
             res=es.index(index="nyx_user",body=usrdb["_source"],doc_type="doc",id=req["login"])
@@ -1438,14 +1439,14 @@ class change_password(Resource):
         req= json.loads(request.data.decode("utf-8"))  
         logger.info(req)
         logger.info(user)
-        if elkversion==7:
+        if elkversion>=7:
             usrdb=es.get(index="nyx_user",id=user["id"])
         else:
             usrdb=es.get(index="nyx_user",doc_type="doc",id=user["id"])
         if pbkdf2_sha256.verify(req["old_password"], usrdb["_source"]["password"]):
             
             usrdb["_source"]["password"]=pbkdf2_sha256.hash(req["new_password"])
-            if elkversion==7:
+            if elkversion>=7:
                 res=es.index(index="nyx_user",body=usrdb["_source"],id=user["id"])
             else:
                 res=es.index(index="nyx_user",body=usrdb["_source"],doc_type="doc",id=user["id"])
@@ -1508,7 +1509,7 @@ class genericQueryFilter(Resource):
         data= json.loads(request.data.decode("utf-8"))           
 
         app=None
-        if elkversion==7:
+        if elkversion>=7:
             app=es.get(index="nyx_app",id=rec_id)
         else:
             app=es.get(index="nyx_app",doc_type="doc",id=rec_id)
@@ -1668,7 +1669,7 @@ class extLoadDataSource(Resource):
         end=request.args.get("end",None)
         logger.info("Data source called "+dsid+" start:"+str(start)+" end:"+str(end))
 
-        if elkversion==7:
+        if elkversion>=7:
             ds=es.get(index="nyx_datasource",id=dsid)
         else:
             ds=es.get(index="nyx_datasource",doc_type="doc",id=dsid)
@@ -1900,7 +1901,7 @@ def genericCRUD(index,object,user=None):
 
     if met== 'get':        
         try:
-            if elkversion==7:
+            if elkversion>=7:
                 ret=es.get(index=index,id=object)
             else:
                 ret=es.get(index=index,id=object,doc_type=request.args.get("doc_type","doc"))
@@ -1915,7 +1916,7 @@ def genericCRUD(index,object,user=None):
                 if("$pbkdf2-sha256" not in dataobj["password"]):
                     dataobj["password"]=pbkdf2_sha256.hash(dataobj["password"])
                     data=json.dumps(dataobj)
-            if elkversion==7:
+            if elkversion>=7:
                 es.index(index=index,body=data,id=object)
             else:
                 es.index(index=index,body=data,doc_type=request.args.get("doc_type","doc"),id=object)
@@ -1925,7 +1926,7 @@ def genericCRUD(index,object,user=None):
 
     elif met== 'delete':
         try:
-            if elkversion==7:
+            if elkversion>=7:
                 ret=es.delete(index=index,id=object)
             else:
                 ret=es.delete(index=index,id=object,doc_type=request.args.get("doc_type","doc"))
@@ -1988,7 +1989,7 @@ def handleAPICalls():
                     indexdatepattern="nyx_apicalls-"+datetime.now().strftime("%Y.%m.%d").lower()
                     for api in apis:
                         action={}
-                        if elkversion==7:
+                        if elkversion>=7:
                             action["index"]={"_index":indexdatepattern}
                         else:
                             action["index"]={"_index":indexdatepattern,"_type":"doc"}
@@ -2061,7 +2062,7 @@ def refresh_indices():
     if last_indices_refresh+timedelta(seconds=indices_refresh_seconds)>datetime.now():
         return
     logger.info("Refresh Indices")    
-    if elkversion==7:
+    if elkversion>=7:
         indices=es.search(index="nyx_indice",body={})["hits"]["hits"]
     else:
         indices=es.search(index="nyx_indice",body={},doc_type="doc")["hits"]["hits"]
@@ -2075,7 +2076,7 @@ def refresh_translations():
     if last_translation_refresh+timedelta(seconds=last_translation_refresh_seconds)>datetime.now():
         return
     logger.info("Refreshing Translations")    
-    if elkversion==7:
+    if elkversion>=7:
         translationsrec=es.search(index="nyx_translation",body={"size":1000})["hits"]["hits"]
     else:
         translationsrec=es.search(index="nyx_translation",body={"size":1000},doc_type="doc")["hits"]["hits"]

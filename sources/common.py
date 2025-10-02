@@ -173,7 +173,7 @@ def loadData(es,conn,index,data,doc_type,download,cui,is_rest_api,user,outputfor
 
 
     if fromval ==0:        
-        if elkversion==7:
+        if elkversion>=7:
             response = es.search(
                 index=index,
                 body=json.dumps(data),
