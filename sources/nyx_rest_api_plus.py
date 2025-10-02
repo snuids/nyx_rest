@@ -959,7 +959,12 @@ def computeMenus(usr,token,apptag):
             old_kibana_url=config.get("url")
             old_kibana_shorturl=config.get("shorturl")
 
-            config["url"],config["shorturl"]=compute_kibana_url(dict_dashboard, appl)
+            try:
+                config["url"],config["shorturl"]=compute_kibana_url(dict_dashboard, appl)
+            except Exception as e:
+                logger.error("Unable to compute kibana url",exc_info=True)
+                config["url"]=old_kibana_url
+                config["shorturl"]=old_kibana_shorturl
 
             if config.get("filtercolumn") is not None and config.get("filtercolumn")!="" and "filters" in usr["_source"] and len(usr["_source"]["filters"])>0:
                 logger.info('compute kibana url for : '+str(appl.get('title')))
@@ -2207,7 +2212,7 @@ def compute_kibana_url(dashboard_dict, appl):
     except:
         logger.error("Unable to compute kibana URL")
         logger.error(appl.get('config'))
-        return 'INVALIDURL'
+        return 'INVALIDURL','INVALIDURL'
 
     dash_obj = dash.get('_source').get('dashboard')
 
