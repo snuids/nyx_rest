@@ -141,7 +141,6 @@ def loadData(es,conn,index,data,doc_type,download,cui,is_rest_api,user,outputfor
 
      #{currentpage: 1, pagesize: 100}
 
-
     fromval=0
 
     for key in [agg for agg in data.get("aggs",[])]:
