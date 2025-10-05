@@ -107,7 +107,7 @@ from opensearchpy import OpenSearch as ES, RequestsHttpConnection as RC
 from auth.auth_ad import authenticate_ad
 from auth.role_mapper import extract_roles_from_ad
 
-VERSION="3.18.0"
+VERSION="3.18.4"
 MODULE="nyx_rest"+"_"+str(os.getpid())
 
 WELCOME=os.environ["WELCOMEMESSAGE"]
@@ -2296,7 +2296,7 @@ def get_dict_dashboards(es):
         }
     }
 
-    res=es.search(index=".kibana", body=query, size=10000)
+    res=es.search(index=".kibana*", body=query, size=10000)
     return {dash['_id'].split(':')[-1]: dash for dash in res['hits']['hits']}
 
 
