@@ -46,7 +46,7 @@ pyrsistent==0.14.11
 python-dateutil==2.7.5
 python-engineio==3.5.0
 python-logstash-async==1.4.1
-python-socketio==3.1.2
+python-socketio==5.14.0
 pytz==2018.7
 redis==3.0.1
 relativetimebuilder==0.2.0
