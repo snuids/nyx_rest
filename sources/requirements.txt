@@ -46,7 +46,7 @@ requests==2.22.0
 six==1.11.0
 stomp.py==4.1.21
 tzlocal==1.5.1
-urllib3==1.25.3
+urllib3==2.6.0
 Werkzeug==0.15.5
 xlrd==1.2.0
 XlsxWriter==1.1.2
