@@ -7,7 +7,11 @@ import logging
 import datetime
 import traceback
 import pandas as pd
-import pyodbc
+try:
+    import pyodbc
+except ImportError:
+    print("pyodbc not installed")
+
 #from datetime import datetime
 from datetime import timedelta
 from cachetools import cached, LRUCache, TTLCache
