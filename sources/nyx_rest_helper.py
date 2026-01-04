@@ -20,13 +20,14 @@ from logging.handlers import TimedRotatingFileHandler
 from amqstompclient import amqstompclient
 from datetime import datetime
 from functools import wraps
-from elasticsearch import Elasticsearch as ES, RequestsHttpConnection as RC
+#from elasticsearch import Elasticsearch as ES, RequestsHttpConnection as RC
+from opensearchpy import OpenSearch as ES, RequestsHttpConnection as RC
 from logstash_async.handler import AsynchronousLogstashHandler
 
 from common import loadData ,kibanaData
 from pg_common import loadPGData
 
-VERSION="0.1.0"
+VERSION="1.0.0"
 MODULE="NYX_Helper"
 QUEUE=["/queue/REST_LOAD_DATA","/queue/REST_LOAD_PGDATA","/queue/REST_LOAD_KIBANA"]
 
@@ -255,7 +256,12 @@ es=None
 logger.info (os.environ["ELK_SSL"])
 
 if os.environ["ELK_SSL"]=="true":
-    host_params = {'host':os.environ["ELK_URL"], 'port':int(os.environ["ELK_PORT"]), 'use_ssl':True}
+    elk_url = os.environ["ELK_URL"]
+    if elk_url.startswith('http://') or elk_url.startswith('https://'):
+        host_params = elk_url
+    else:
+        host_params = "https://" + elk_url + ":" + os.environ["ELK_PORT"]
+    logger.info("ELK Host Params:"+str(host_params))
     es = ES([host_params], connection_class=RC, http_auth=(os.environ["ELK_LOGIN"], os.environ["ELK_PASSWORD"]),  use_ssl=True ,verify_certs=False)
 else:
     host_params="http://"+os.environ["ELK_URL"]+":"+os.environ["ELK_PORT"]
