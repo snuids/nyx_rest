@@ -27,7 +27,7 @@ from logstash_async.handler import AsynchronousLogstashHandler
 from common import loadData ,kibanaData
 from pg_common import loadPGData
 
-VERSION="1.0.0"
+VERSION="1.1.0"
 MODULE="NYX_Helper"
 QUEUE=["/queue/REST_LOAD_DATA","/queue/REST_LOAD_PGDATA","/queue/REST_LOAD_KIBANA"]
 
@@ -120,39 +120,39 @@ def messageReceived(destination,message,headers):
 
 def sendMail(task,mes):
     global SMTP_ADDRESS,SMTP_USER,SMTP_PASSWORD
-    logger.info("Sending mail:<"+SMTP_ADDRESS+"> <"+SMTP_USER+"> <"+len(SMTP_PASSWORD)*"*"+"> Port<"+str(SMTP_PORT)+">")
-    #logger.info(task)
-    #logger.info(mes)
+    server = None
+    zip_filename = None
     
-    print(os.environ["SMTP_TLS"])
+    try:
+        logger.info("Sending mail:<"+SMTP_ADDRESS+"> <"+SMTP_USER+"> <"+len(SMTP_PASSWORD)*"*"+"> Port<"+str(SMTP_PORT)+">")
+        logger.info("Recipient: "+mes["user"]["id"])
+        
+        if os.environ["SMTP_SSL"]=="true":
+            logger.info("OPENING SERVER SSL")
+            server = smtplib.SMTP_SSL(SMTP_ADDRESS, SMTP_PORT)
+            logger.info("SERVER OPENED")    
+            server.ehlo()
+        else:
+            logger.info("OPENING SERVER")
+            server = smtplib.SMTP(SMTP_ADDRESS, SMTP_PORT)
+            logger.info("SERVER OPENED")  
 
-    if os.environ["SMTP_SSL"]=="true":
-        logger.info("OPENING SERVER SSL")
-        server = smtplib.SMTP_SSL(SMTP_ADDRESS, SMTP_PORT)
-        logger.info("SERVER OPENED")    
-        server.ehlo()
-    else:
-        logger.info("OPENING SERVER")
-        server = smtplib.SMTP(SMTP_ADDRESS, SMTP_PORT)
-        logger.info("SERVER OPENED")  
+        if os.environ["SMTP_TLS"]=="true":
+            logger.info("START TLS")
+            server.starttls()
 
-    if os.environ["SMTP_TLS"]=="true":
-        logger.info("START TLS")
-        server.starttls()
+        logger.info("SERVER OPENED2")
+        if len(SMTP_USER)>0:
+            server.login(SMTP_USER, SMTP_PASSWORD)
 
+        logger.info("SERVER OPENED3")
 
-    logger.info("SERVER OPENED2")
-    if len(SMTP_USER)>0:
-        server.login(SMTP_USER, SMTP_PASSWORD)
-
-    logger.info("SERVER OPENED3")
-
-    msg = MIMEMultipart()
-    msg['Subject'] = "Data From NYX"
-    msg['From'] = SMTP_FROM
-    msg['To'] = mes["user"]["id"]
-    msg.preamble = 'Data From Nyx'
-    text="""Dear USER
+        msg = MIMEMultipart()
+        msg['Subject'] = "Data From NYX"
+        msg['From'] = SMTP_FROM
+        msg['To'] = mes["user"]["id"]
+        msg.preamble = 'Data From Nyx'
+        text="""Dear USER
 
 Please find attached your data:
 
@@ -161,30 +161,54 @@ Please find attached your data:
 
 Regards
 """
-    text=text.replace("USER",mes["user"]["firstname"]+" "+mes["user"]["lastname"])
-    text=text.replace("RECORDS",str(task["total"]))
-    text=text.replace("EXPORT",str(task["took"]))
-    
-    logger.info(text)
-    msg.attach(MIMEText(text))
+        text=text.replace("USER",mes["user"]["firstname"]+" "+mes["user"]["lastname"])
+        text=text.replace("RECORDS",str(task["total"]))
+        text=text.replace("EXPORT",str(task["took"]))
+        
+        logger.info(text)
+        msg.attach(MIMEText(text))
 
-    #extension=mes["outputformat"]
+        # Create unique zip filename to avoid conflicts
+        zip_filename = "report_" + str(uuid.uuid4()) + ".zip"
+        logger.info("Zipping file: " + zip_filename)
+        
+        if not os.path.exists(task["file"]):
+            logger.error("Source file does not exist: " + task["file"])
+            raise FileNotFoundError("Source file not found: " + task["file"])
+        
+        file_zip = zipfile.ZipFile(zip_filename, 'w')
+        file_zip.write(task["file"], compress_type=zipfile.ZIP_DEFLATED)
+        file_zip.close()
 
-    logger.info("Zipping file")
-    file_zip = zipfile.ZipFile("report.zip", 'w')
-    file_zip.write(task["file"], compress_type=zipfile.ZIP_DEFLATED)
-    file_zip.close()
-    #extension=".zip"
+        part = MIMEBase('application', "octet-stream")
+        part.set_payload(open(zip_filename, "rb").read())
+        encoders.encode_base64(part)
+        part.add_header('Content-Disposition', 'attachment; filename="'+"report"+".zip"+'"')
+        msg.attach(part)
 
-    part = MIMEBase('application', "octet-stream")
-    part.set_payload(open("report.zip", "rb").read())
-    encoders.encode_base64(part)
-    part.add_header('Content-Disposition', 'attachment; filename="'+"report"+".zip"+'"')
-    msg.attach(part)
-
-    res=server.send_message( msg)
-    logger.info("Mail sent to:"+mes["user"]["id"])
-    logger.info(res)
+        res=server.send_message(msg)
+        logger.info("Mail sent to: "+mes["user"]["id"])
+        logger.info("Send result: "+str(res))
+        
+    except Exception as e:
+        logger.error("Failed to send email to: "+mes["user"]["id"], exc_info=True)
+        raise
+    finally:
+        # Clean up zip file
+        if zip_filename and os.path.exists(zip_filename):
+            try:
+                os.remove(zip_filename)
+                logger.info("Cleaned up temporary zip file: " + zip_filename)
+            except Exception as e:
+                logger.error("Failed to remove zip file: " + zip_filename, exc_info=True)
+        
+        # Close SMTP connection
+        if server:
+            try:
+                server.quit()
+                logger.info("SMTP connection closed")
+            except Exception as e:
+                logger.error("Failed to close SMTP connection", exc_info=True)
 
 def remoteLoadData(message):
     logger.info("=== "*10)
