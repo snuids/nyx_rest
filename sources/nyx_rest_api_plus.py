@@ -107,7 +107,7 @@ from opensearchpy import OpenSearch as ES, RequestsHttpConnection as RC
 from auth.auth_ad import authenticate_ad
 from auth.role_mapper import extract_roles_from_ad
 
-VERSION="3.18.4"
+VERSION="3.18.5"
 MODULE="nyx_rest"+"_"+str(os.getpid())
 
 WELCOME=os.environ["WELCOMEMESSAGE"]
@@ -1174,6 +1174,7 @@ class loginGoogleRest(Resource):
             resp=make_response(jsonify({'version':VERSION,'error':"",'cred':{'token':token,'user':usr["_source"]},
                                                         "menus":finalcategory,"all_priv":all_priv,"all_filters":all_filters}))
             resp.set_cookie('nyx_kibananyx', str(token),secure=COOKIESECURE,httponly=True)
+            resp.set_cookie('nyx_grafananyx', str(token),secure=COOKIESECURE,httponly=True)
 
             setACookie("nodered",usr["_source"]["privileges"],resp,token)
             setACookie("anaconda",usr["_source"]["privileges"],resp,token)
