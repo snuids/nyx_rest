@@ -107,7 +107,7 @@ from opensearchpy import OpenSearch as ES, RequestsHttpConnection as RC
 from auth.auth_ad import authenticate_ad
 from auth.role_mapper import extract_roles_from_ad
 
-VERSION="3.18.5"
+VERSION="3.18.6"
 MODULE="nyx_rest"+"_"+str(os.getpid())
 
 WELCOME=os.environ["WELCOMEMESSAGE"]
@@ -1234,6 +1234,8 @@ def finalize_login(usr, data, es, conn):
         "all_filters": all_filters
     }))
     resp.set_cookie('nyx_kibananyx', str(token),
+                    secure=COOKIESECURE, httponly=True)
+    resp.set_cookie('nyx_grafananyx', str(token),
                     secure=COOKIESECURE, httponly=True)
 
     for app in ["nodered","anaconda","cerebro","grafana","kibana","logs"]:
