@@ -8,7 +8,7 @@ from functools import wraps
 from datetime import datetime
 from datetime import timedelta
 from flask import Flask, jsonify, request,Blueprint, make_response
-from flask_restplus import Namespace,Api, Resource, fields
+from flask_restx import Namespace,Api, Resource, fields
 
 
 
