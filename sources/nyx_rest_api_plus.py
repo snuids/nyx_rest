@@ -38,6 +38,7 @@ v3.15.0 AMA 14/Jun/2025  Added SQL Server support
 v3.16.0 JIG 23/Sep/2025  Added AD support
 v3.17.0 AMA 26/Sep/2025  Create Kibana short url
 v3.18.0 AMA 26/Sep/2025  Added elastic 8 support
+v3.18.7 AMA 18/Apr/2026  Re added datasource via API
 """
 
 import re
@@ -107,7 +108,7 @@ from opensearchpy import OpenSearch as ES, RequestsHttpConnection as RC
 from auth.auth_ad import authenticate_ad
 from auth.role_mapper import extract_roles_from_ad
 
-VERSION="3.18.6"
+VERSION="3.18.7"
 MODULE="nyx_rest"+"_"+str(os.getpid())
 
 WELCOME=os.environ["WELCOMEMESSAGE"]
@@ -1044,7 +1045,7 @@ class loginOAuthRest(Resource):
         global tokens
         logger.info(">> OAUTH LOGIN IN")  
         data=json.loads(request.data.decode("utf-8"))
-        logger.info(data)  
+        #logger.info(data)  
 
         post_data={"client_secret":"2997acd1b285d45551ecf6606f53b98b8246717b"
                     ,"client_id":data["clientId"],"code":data["code"]}
@@ -1237,6 +1238,7 @@ def finalize_login(usr, data, es, conn):
                     secure=COOKIESECURE, httponly=True)
     resp.set_cookie('nyx_grafananyx', str(token),
                     secure=COOKIESECURE, httponly=True)
+    redisserver.set("nyx_grafananyx_"+str(token),"OK",3600*24)
 
     for app in ["nodered","anaconda","cerebro","grafana","kibana","logs"]:
         setACookie(app, usr["_source"]["privileges"], resp, token)
@@ -1707,18 +1709,19 @@ class extLoadDataSource(Resource):
             return {"error":"","records":json.loads(encoder.encode(recs))}
 
         else:
-            r = requests.post('http://esnodebal:9200/_opendistro/_sql',json={"query":query})            
+            sqlpost="http://"+os.environ.get("ELK_URL")+":"+os.environ.get("ELK_PORT")+"/_sql"
+            r = requests.post(sqlpost,json={"query":query})            
             records=json.loads(r.text)            
-            if "schema" in records:
+            if "columns" in records:
                 results=[]
                 cols=[]
-                for col in records["schema"]:
+                for col in records["columns"]:
                     if "alias" in col:
                         cols.append(col["alias"])
                     else:
                         cols.append(col["name"])
 
-                for rec in records["datarows"]:
+                for rec in records["rows"]:
                     #for col in 
                     obj={}
                     for i,col in enumerate(cols):
@@ -2323,7 +2326,7 @@ def messageReceived(destination,message,headers):
 #>> AMQC
 server={"ip":os.environ["AMQC_URL"],"port":os.environ["AMQC_PORT"]
                 ,"login":os.environ["AMQC_LOGIN"],"password":os.environ["AMQC_PASSWORD"]}
-logger.info(server)                
+#logger.info(server)                
 conn=amqstompclient.AMQClient(server
     , {"name":MODULE,"version":VERSION,"lifesign":"/topic/NYX_MODULE_INFO"},['/topic/LOGOUT_EVENT','/topic/NYX_LAMBDA_RESTAPI'],callback=messageReceived)
 #conn,listener= amqHelper.init_amq_connection(activemq_address, activemq_port, activemq_user,activemq_password, "RestAPI",VERSION,messageReceived)
