@@ -117,3 +117,4 @@ sources/logs/*
 filldb.sh
 .vscode/launch.json
 sources/.vscode/settings.json
+sources/startresthelper.sh

@@ -39,6 +39,7 @@ v3.16.0 JIG 23/Sep/2025  Added AD support
 v3.17.0 AMA 26/Sep/2025  Create Kibana short url
 v3.18.0 AMA 26/Sep/2025  Added elastic 8 support
 v3.18.7 AMA 18/Apr/2026  Re added datasource via API
+v3.18.8 AMA 18/Apr/2026  AMQC privilege added to login and logout
 """
 
 import re
@@ -108,7 +109,7 @@ from opensearchpy import OpenSearch as ES, RequestsHttpConnection as RC
 from auth.auth_ad import authenticate_ad
 from auth.role_mapper import extract_roles_from_ad
 
-VERSION="3.18.7"
+VERSION="3.18.8"
 MODULE="nyx_rest"+"_"+str(os.getpid())
 
 WELCOME=os.environ["WELCOMEMESSAGE"]
@@ -1180,6 +1181,7 @@ class loginGoogleRest(Resource):
             setACookie("nodered",usr["_source"]["privileges"],resp,token)
             setACookie("anaconda",usr["_source"]["privileges"],resp,token)
             setACookie("cerebro",usr["_source"]["privileges"],resp,token)
+            setACookie("amqc",usr["_source"]["privileges"],resp,token)
             setACookie("grafana",usr["_source"]["privileges"],resp,token)
             setACookie("kibana",usr["_source"]["privileges"],resp,token)
             setACookie("logs",usr["_source"]["privileges"],resp,token)
@@ -1240,7 +1242,7 @@ def finalize_login(usr, data, es, conn):
                     secure=COOKIESECURE, httponly=True)
     redisserver.set("nyx_grafananyx_"+str(token),"OK",3600*24)
 
-    for app in ["nodered","anaconda","cerebro","grafana","kibana","logs"]:
+    for app in ["nodered","anaconda","cerebro","grafana","kibana","logs","amqc"]:
         setACookie(app, usr["_source"]["privileges"], resp, token)
 
     pushHistoryToELK(request, 0, usr["_source"], str(token), "")
@@ -1378,6 +1380,7 @@ class logout(Resource):
         redisserver.delete("nyx_tok_"+str(token))
         redisserver.delete("nyx_nodered_"+str(token))
         redisserver.delete("nyx_cerebro_"+str(token))
+        redisserver.delete("nyx_amqc_"+str(token))
         redisserver.delete("nyx_grafana_"+str(token))
         redisserver.delete("nyx_kibana_"+str(token))
         redisserver.delete("nyx_anaconda_"+str(token))
