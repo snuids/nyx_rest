@@ -109,7 +109,7 @@ from opensearchpy import OpenSearch as ES, RequestsHttpConnection as RC
 from auth.auth_ad import authenticate_ad
 from auth.role_mapper import extract_roles_from_ad
 
-VERSION="3.18.8"
+VERSION="3.18.9"
 MODULE="nyx_rest"+"_"+str(os.getpid())
 
 WELCOME=os.environ["WELCOMEMESSAGE"]
@@ -1181,6 +1181,7 @@ class loginGoogleRest(Resource):
             setACookie("nodered",usr["_source"]["privileges"],resp,token)
             setACookie("anaconda",usr["_source"]["privileges"],resp,token)
             setACookie("cerebro",usr["_source"]["privileges"],resp,token)
+            setACookie("redis",usr["_source"]["privileges"],resp,token)
             setACookie("amqc",usr["_source"]["privileges"],resp,token)
             setACookie("grafana",usr["_source"]["privileges"],resp,token)
             setACookie("kibana",usr["_source"]["privileges"],resp,token)
@@ -1242,7 +1243,7 @@ def finalize_login(usr, data, es, conn):
                     secure=COOKIESECURE, httponly=True)
     redisserver.set("nyx_grafananyx_"+str(token),"OK",3600*24)
 
-    for app in ["nodered","anaconda","cerebro","grafana","kibana","logs","amqc"]:
+    for app in ["nodered","anaconda","cerebro","grafana","kibana","logs","amqc","redis"]:
         setACookie(app, usr["_source"]["privileges"], resp, token)
 
     pushHistoryToELK(request, 0, usr["_source"], str(token), "")
@@ -1380,6 +1381,7 @@ class logout(Resource):
         redisserver.delete("nyx_tok_"+str(token))
         redisserver.delete("nyx_nodered_"+str(token))
         redisserver.delete("nyx_cerebro_"+str(token))
+        redisserver.delete("nyx_redis_"+str(token))
         redisserver.delete("nyx_amqc_"+str(token))
         redisserver.delete("nyx_grafana_"+str(token))
         redisserver.delete("nyx_kibana_"+str(token))
