@@ -40,6 +40,7 @@ v3.17.0 AMA 26/Sep/2025  Create Kibana short url
 v3.18.0 AMA 26/Sep/2025  Added elastic 8 support
 v3.18.7 AMA 18/Apr/2026  Re added datasource via API
 v3.18.8 AMA 18/Apr/2026  AMQC privilege added to login and logout
+v3.18.9 AMA 16/May/2026  Datasource endpoint supports flat parameter to return records directly
 """
 
 import re
@@ -1683,7 +1684,8 @@ class extLoadDataSource(Resource):
     def get(self,dsid,start=None,end=None,user=None):
         start=request.args.get("start",None)
         end=request.args.get("end",None)
-        logger.info("Data source called "+dsid+" start:"+str(start)+" end:"+str(end))
+        flat=request.args.get("flat","false").lower() in ["true", "1", "yes"]
+        logger.info("Data source called "+dsid+" start:"+str(start)+" end:"+str(end)+" flat:"+str(flat))
 
         if elkversion>=7:
             ds=es.get(index="nyx_datasource",id=dsid)
@@ -1711,7 +1713,8 @@ class extLoadDataSource(Resource):
                 recs=cursor.fetchall()
                 logger.info(recs)
             encoder = DateTimeEncoder()
-            return {"error":"","records":json.loads(encoder.encode(recs))}
+            records = json.loads(encoder.encode(recs))
+            return records if flat else {"error":"","records":records}
 
         else:
             sqlpost="http://"+os.environ.get("ELK_URL")+":"+os.environ.get("ELK_PORT")+"/_sql"
@@ -1734,7 +1737,7 @@ class extLoadDataSource(Resource):
                     
                     results.append(obj)
                 
-                return {"error":"","records":results}
+                return results if flat else {"error":"","records":results}
 
 
                 
@@ -1757,8 +1760,8 @@ class extLoadDataSource(Resource):
                         newrecords.append(rec["_source"])
                     
             recjson=pd.DataFrame(newrecords).to_json(orient="records")
-
-            return {"error":"","records":json.loads(recjson)}
+            records = json.loads(recjson)
+            return records if flat else {"error":"","records":records}
 
 #---------------------------------------------------------------------------
 # API Kibana Load
