@@ -9,6 +9,7 @@ from datetime import datetime
 from datetime import timedelta
 from flask import Flask, jsonify, request,Blueprint, make_response
 from flask_restx import Namespace,Api, Resource, fields
+from config import settings
 
 
 
@@ -18,7 +19,7 @@ logger=logging.getLogger()
 
 
 ONFLEET_URL_TASK = "https://onfleet.com/api/v2/tasks"
-ONFLEET_APIKEY = os.environ['ONFLEET_APIKEY']
+ONFLEET_APIKEY = settings.ONFLEET_APIKEY
 
 
 def config(api,conn,es,redis,token_required):
