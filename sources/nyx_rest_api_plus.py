@@ -62,6 +62,7 @@ import importlib
 import psycopg2
 
 import threading
+import concurrent.futures
 import cachetools
 import subprocess
 import os,logging
@@ -81,10 +82,9 @@ from common import get_mappings
 
 from helpers.disk_helper import list_dir
 
-from dotenv import load_dotenv
-load_dotenv()
+from config import settings
 
-dirs=list_dir("/tmp/","/tmp",".*\.log")
+#dirs=list_dir("/tmp/","/tmp",r".*\.log")
 
 
 
@@ -113,8 +113,8 @@ from auth.role_mapper import extract_roles_from_ad
 VERSION="3.18.9"
 MODULE="nyx_rest"+"_"+str(os.getpid())
 
-WELCOME=os.environ["WELCOMEMESSAGE"]
-ICON=os.environ["ICON"]
+WELCOME=settings.WELCOMEMESSAGE
+ICON=settings.ICON
 
 COOKIESECURE=True
 
@@ -143,7 +143,7 @@ logger = logging.getLogger()
 
 lshandler=None
 
-if os.environ["USE_LOGSTASH"]=="true":
+if settings.USE_LOGSTASH:
     logger.info ("Adding logstash appender")
     lshandler=AsynchronousLogstashHandler("logstash", 5001, database_path='logstash_test.db')
     lshandler.setLevel(logging.ERROR)
@@ -163,7 +163,7 @@ logger.info("REST API %s" %(VERSION))
 
 userActivities=[]
 
-if os.environ.get("COOKIESECURE","1")!="1":
+if not settings.COOKIESECURE:
     COOKIESECURE=False
     logger.warning("Cookie set to unsecure !!!!!!!!!!!!!!!!")
 
@@ -191,10 +191,10 @@ name_space = api.namespace('api/v1', description='Main APIs')
 CORS(app)
 
 logger.info("Starting redis connection")
-logger.info("IP=>"+os.environ["REDIS_IP"]+"<")
-redisserver = redis.Redis(host=os.environ["REDIS_IP"], port=6379, db=0)
-OUTPUT_FOLDER=os.environ["OUTPUT_FOLDER"]
-OUTPUT_URL=os.environ["OUTPUT_URL"]
+logger.info(f"IP=>{settings.REDIS_IP}<")
+redisserver = redis.Redis(host=settings.REDIS_IP, port=6379, db=0)
+OUTPUT_FOLDER=settings.OUTPUT_FOLDER
+OUTPUT_URL=settings.OUTPUT_URL
 
 pg_connection=None
 pg_thread=None
@@ -231,11 +231,21 @@ def get_postgres_connection():
     if pg_connection!=None:
         return pg_connection
     try:
-        pg_connection = psycopg2.connect(user = os.environ["PG_LOGIN"],
-                                    password = os.environ["PG_PASSWORD"],
-                                    host = os.environ["PG_HOST"],
-                                    port = os.environ["PG_PORT"],
-                                    database = os.environ["PG_DATABASE"])
+        def _connect():
+            return psycopg2.connect(user = settings.PG_LOGIN,
+                                    password = settings.PG_PASSWORD,
+                                    host = settings.PG_HOST,
+                                    port = settings.PG_PORT,
+                                    database = settings.PG_DATABASE,
+                                    connect_timeout = 5,
+                                    gssencmode = "disable",
+                                    options="-c statement_timeout=5000")
+        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as _executor:
+            _future = _executor.submit(_connect)
+            try:
+                pg_connection = _future.result(timeout=6)
+            except concurrent.futures.TimeoutError:
+                raise Exception("PostgreSQL connection timed out after 6 seconds")
         cursor = pg_connection.cursor()
         # Print PostgreSQL Connection properties
         logger.info ( pg_connection.get_dsn_parameters())
@@ -609,7 +619,7 @@ class listDir(Resource):
 
         if req['rec_id'] == -1:
             prepath="/"
-            regex=".*\.log$"
+            regex=r".*\.log$"
         else:
             prepath, regex = retrieve_app_info(req['rec_id'])
 
@@ -682,7 +692,7 @@ class files(Resource):
 
         if rec_id=='-1':
             prepath="/"
-            regex=".*\.log$"
+            regex=r".*\.log$"
         else:
             prepath, regex = retrieve_app_info(rec_id)
 
@@ -973,10 +983,10 @@ def computeMenus(usr,token,apptag):
                 logger.info('compute kibana url for : '+str(appl.get('title')))
                 config["url"]=clean_kibana_url(config.get('url'),config.get("filtercolumn"),usr["_source"]["filters"])
             #logger.info('==> url for #=#'+config["url"]+'#=#')
-            try:
-                logger.info('==> url for #=#'+config["url"]+'#=#')
-            except:
-                logger.error('==> url for #=#'+str(config)+'#=#')
+            # try:
+            #     logger.info('==> url for #=#'+config["url"]+'#=#')
+            # except:
+            #     logger.error('==> url for #=#'+str(config)+'#=#')
 
             if old_kibana_url != config.get("url") or old_kibana_shorturl != config.get("shorturl"):
                 logger.warning('the url calculated for app: '+appl.get('title')+' is desync from the database (ES)')
@@ -1095,7 +1105,7 @@ class loginGoogleRest(Resource):
             # CLIENT_SECRET_FILE = './client_secret_859549551906-jf6n8pvjgbtp77kolhofv0ge45ucacbg.apps.googleusercontent.com.json'
 
             
-            credentials = client.credentials_from_clientsecrets_and_code(os.environ["CLIENT_SECRET_FILE"],
+            credentials = client.credentials_from_clientsecrets_and_code(settings.CLIENT_SECRET_FILE,
                                                                         ['profile', 'email'],
                                                                         auth_code)
 
@@ -1717,7 +1727,7 @@ class extLoadDataSource(Resource):
             return records if flat else {"error":"","records":records}
 
         else:
-            sqlpost="http://"+os.environ.get("ELK_URL")+":"+os.environ.get("ELK_PORT")+"/_sql"
+            sqlpost=f"http://{settings.ELK_URL}/_sql"
             r = requests.post(sqlpost,json={"query":query})            
             records=json.loads(r.text)            
             if "columns" in records:
@@ -2054,8 +2064,8 @@ class esMapping(Resource):
 class grafanaDashboards(Resource):    
     @token_required()
     def get(self, user=None):
-        GRAFANA_URL = os.environ.get("GRAFANA_URL","")
-        GRAFANA_API_KEY = os.environ.get("GRAFANA_API_KEY","")
+        GRAFANA_URL = settings.GRAFANA_URL
+        GRAFANA_API_KEY = settings.GRAFANA_API_KEY
 
         if len(GRAFANA_URL)==0 or len(GRAFANA_API_KEY)==0:
             logger.error("Grafana URL or API Key not set in environment variables.")
@@ -2332,8 +2342,8 @@ def messageReceived(destination,message,headers):
         logger.error("Unknown destination %s" %(destination))
 
 #>> AMQC
-server={"ip":os.environ["AMQC_URL"],"port":os.environ["AMQC_PORT"]
-                ,"login":os.environ["AMQC_LOGIN"],"password":os.environ["AMQC_PASSWORD"]}
+server={"ip":settings.AMQC_URL,"port":settings.AMQC_PORT
+                ,"login":settings.AMQC_LOGIN,"password":settings.AMQC_PASSWORD}
 #logger.info(server)                
 conn=amqstompclient.AMQClient(server
     , {"name":MODULE,"version":VERSION,"lifesign":"/topic/NYX_MODULE_INFO"},['/topic/LOGOUT_EVENT','/topic/NYX_LAMBDA_RESTAPI'],callback=messageReceived)
@@ -2343,14 +2353,18 @@ connectionparameters={"conn":conn}
 #>> ELK
 
 es=None
-logger.info (os.environ["ELK_SSL"])
+logger.info(settings.ELK_SSL)
 
-if os.environ["ELK_SSL"]=="true":
-    host_params = {'host':os.environ["ELK_URL"], 'port':int(os.environ["ELK_PORT"]), 'use_ssl':True}
-    es = ES([host_params], connection_class=RC, http_auth=(os.environ["ELK_LOGIN"], os.environ["ELK_PASSWORD"]),  use_ssl=True ,verify_certs=False)
+if settings.ELK_SSL:
+    es = ES(
+        hosts=[f"https://{settings.ELK_URL}"],
+        http_auth=(settings.ELK_LOGIN, settings.ELK_PASSWORD),
+        use_ssl=True,
+        verify_certs=False,
+        ssl_show_warn=False,
+    )
 else:
-    host_params="http://"+os.environ["ELK_URL"]+":"+os.environ["ELK_PORT"]
-    es = ES(hosts=[host_params])
+    es = ES(hosts=[f"http://{settings.ELK_URL}"])
 
 
 #>> THREAD
@@ -2387,6 +2401,6 @@ if __name__ != '__main__':
         gunicorn_logger.addHandler(lshandler)
 
 if __name__ == '__main__':    
-    logger.info("AMQC_URL          :"+os.environ["AMQC_URL"])
+    logger.info(f"AMQC_URL          :{settings.AMQC_URL}")
     app.run(threaded=False,host= '0.0.0.0',port=5001)
 

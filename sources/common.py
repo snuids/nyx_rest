@@ -36,7 +36,7 @@ def get_mappings(es,index):
 
 @cached(cache=TTLCache(maxsize=1024, ttl=300))
 def get_es_info(es):
-    return es.info()
+    return es.info(request_timeout=5)
 
 
 def getELKVersion(es):
