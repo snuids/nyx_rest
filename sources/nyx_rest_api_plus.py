@@ -118,8 +118,6 @@ ICON=settings.ICON
 
 COOKIESECURE=True
 
-    
-
 elkversion=6
 
 restapiresults=[]
