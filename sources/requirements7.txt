@@ -12,7 +12,6 @@ click==8.1.8
 cryptography==44.0.2
 Deprecated==1.2.18
 docopt==0.6.2
-dotenv==0.9.9
 elastic-transport==8.17.0
 Events==0.5
 Flask==3.1.0
@@ -46,6 +45,7 @@ pycparser==2.22
 pylogbeat==2.0.1
 pyparsing==3.2.1
 python-dateutil==2.9.0.post0
+pydantic-settings==2.7.1
 python-dotenv==1.0.1
 python-engineio==4.11.2
 python-logstash-async==4.0.1
@@ -62,7 +62,7 @@ six==1.17.0
 stomp.py==8.2.0
 XlsxWriter==3.2.2
 types-python-dateutil==2.9.0.20241206
-typing_extensions==4.12.2
+typing_extensions>=4.13.2
 tzdata==2025.1
 tzlocal==5.3.1
 urllib3==1.26.20

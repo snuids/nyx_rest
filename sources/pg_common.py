@@ -15,6 +15,7 @@ except ImportError:
 #from datetime import datetime
 from datetime import timedelta
 from cachetools import cached, LRUCache, TTLCache
+from config import settings
 
 sql_server_connections={}
 
@@ -23,11 +24,11 @@ def create_sql_server_connection(config):
     logger.info("Creating SQL Server connection")
     try:
         
-        server=os.environ.get("SQLSERVER_HOST", "NA")
-        user=os.environ.get("SQLSERVER_LOGIN", "NA")
-        password=os.environ.get("SQLSERVER_PASSWORD", "NA")
+        server=settings.SQLSERVER_HOST
+        user=settings.SQLSERVER_LOGIN
+        password=settings.SQLSERVER_PASSWORD
         database=config["database"]
-        port=int(os.environ.get("SQLSERVER_PORT", "1433"))
+        port=settings.SQLSERVER_PORT
     
         connectionString = f'DRIVER={{ODBC Driver 18 for SQL Server}};SERVER={server};DATABASE={database};UID={user};PWD={password};PORT={port};TrustServerCertificate=yes;'
         logger.info("Connection String: "+connectionString)
