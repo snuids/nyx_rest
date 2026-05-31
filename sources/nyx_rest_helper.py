@@ -26,6 +26,7 @@ from logstash_async.handler import AsynchronousLogstashHandler
 
 from common import loadData ,kibanaData
 from pg_common import loadPGData
+from config import settings
 
 VERSION="1.1.0"
 MODULE="NYX_Helper"
@@ -56,11 +57,11 @@ def get_postgres_connection():
     if pg_connection!=None:
         return pg_connection
     try:
-        pg_connection = psycopg2.connect(user = os.environ["PG_LOGIN"],
-                                    password = os.environ["PG_PASSWORD"],
-                                    host = os.environ["PG_HOST"],
-                                    port = os.environ["PG_PORT"],
-                                    database = os.environ["PG_DATABASE"])
+        pg_connection = psycopg2.connect(user = settings.PG_LOGIN,
+                                    password = settings.PG_PASSWORD,
+                                    host = settings.PG_HOST,
+                                    port = settings.PG_PORT,
+                                    database = settings.PG_DATABASE)
         cursor = pg_connection.cursor()
         # Print PostgreSQL Connection properties
         logger.info ( pg_connection.get_dsn_parameters())
@@ -127,7 +128,7 @@ def sendMail(task,mes):
         logger.info("Sending mail:<"+SMTP_ADDRESS+"> <"+SMTP_USER+"> <"+len(SMTP_PASSWORD)*"*"+"> Port<"+str(SMTP_PORT)+">")
         logger.info("Recipient: "+mes["user"]["id"])
         
-        if os.environ["SMTP_SSL"]=="true":
+        if settings.SMTP_SSL:
             logger.info("OPENING SERVER SSL")
             server = smtplib.SMTP_SSL(SMTP_ADDRESS, SMTP_PORT)
             logger.info("SERVER OPENED")    
@@ -137,7 +138,7 @@ def sendMail(task,mes):
             server = smtplib.SMTP(SMTP_ADDRESS, SMTP_PORT)
             logger.info("SERVER OPENED")  
 
-        if os.environ["SMTP_TLS"]=="true":
+        if settings.SMTP_TLS:
             logger.info("START TLS")
             server.starttls()
 
@@ -236,7 +237,7 @@ logger = logging.getLogger()
 
 lshandler=None
 
-if os.environ["USE_LOGSTASH"]=="true":
+if settings.USE_LOGSTASH:
     logger.info ("Adding logstash appender")
     lshandler=AsynchronousLogstashHandler("logstash", 5001, database_path='logstash_test.db')
     lshandler.setLevel(logging.ERROR)
@@ -256,18 +257,18 @@ logger.info("Starting: %s" % MODULE)
 logger.info("Module:   %s" %(VERSION))
 logger.info("==============================")
 
-OUTPUT_FOLDER=os.environ["OUTPUT_FOLDER"]
-OUTPUT_URL=os.environ["OUTPUT_URL"]
+OUTPUT_FOLDER=settings.OUTPUT_FOLDER
+OUTPUT_URL=settings.OUTPUT_URL
 
-SMTP_ADDRESS=os.environ["SMTP_ADDRESS"]
-SMTP_USER=os.environ["SMTP_USER"]
-SMTP_PASSWORD=os.environ["SMTP_PASSWORD"]
-SMTP_FROM=os.environ["SMTP_FROM"]
-SMTP_PORT=int(os.environ["SMTP_PORT"])
+SMTP_ADDRESS=settings.SMTP_ADDRESS
+SMTP_USER=settings.SMTP_USER
+SMTP_PASSWORD=settings.SMTP_PASSWORD
+SMTP_FROM=settings.SMTP_FROM
+SMTP_PORT=settings.SMTP_PORT
 
 #>> AMQC
-server={"ip":os.environ["AMQC_URL"],"port":os.environ["AMQC_PORT"]
-                ,"login":os.environ["AMQC_LOGIN"],"password":os.environ["AMQC_PASSWORD"]
+server={"ip":settings.AMQC_URL,"port":settings.AMQC_PORT
+                ,"login":settings.AMQC_LOGIN,"password":settings.AMQC_PASSWORD
                 ,"heartbeats":(120000,120000),"earlyack":True}
 logger.info(server)                
 conn=amqstompclient.AMQClient(server
@@ -277,23 +278,23 @@ connectionparameters={"conn":conn}
 
 #>> ELK
 es=None
-logger.info (os.environ["ELK_SSL"])
+logger.info(settings.ELK_SSL)
 
-if os.environ["ELK_SSL"]=="true":
-    elk_url = os.environ["ELK_URL"]
+if settings.ELK_SSL:
+    elk_url = settings.ELK_URL
     if elk_url.startswith('http://') or elk_url.startswith('https://'):
         host_params = elk_url
     else:
-        host_params = "https://" + elk_url + ":" + os.environ["ELK_PORT"]
+        host_params = f"https://{elk_url}:{settings.ELK_PORT}"
     logger.info("ELK Host Params:"+str(host_params))
-    es = ES([host_params], connection_class=RC, http_auth=(os.environ["ELK_LOGIN"], os.environ["ELK_PASSWORD"]),  use_ssl=True ,verify_certs=False)
+    es = ES([host_params], connection_class=RC, http_auth=(settings.ELK_LOGIN, settings.ELK_PASSWORD),  use_ssl=True ,verify_certs=False)
 else:
-    host_params="http://"+os.environ["ELK_URL"]+":"+os.environ["ELK_PORT"]
+    host_params=f"http://{settings.ELK_URL}:{settings.ELK_PORT}"
     es = ES(hosts=[host_params])
 
 
 if __name__ == '__main__':    
-    logger.info("AMQC_URL          :"+os.environ["AMQC_URL"])
+    logger.info(f"AMQC_URL          :{settings.AMQC_URL}")
     while True:
         time.sleep(5)
         try:            
