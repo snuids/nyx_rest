@@ -230,7 +230,11 @@ def register(app, api, name_space):
                 return records if flat else {"error": "", "records": records}
 
             else:
-                sqlpost = f"http://{settings.ELK_URL}/_sql"
+                elk_base = settings.ELK_URL
+                if ':' not in elk_base:
+                    elk_base = f"{elk_base}:9200"
+                protocol = "https" if settings.ELK_SSL else "http"
+                sqlpost = f"{protocol}://{elk_base}/_sql"
                 r = requests.post(sqlpost, json={"query": query})
                 records = json.loads(r.text)
 
