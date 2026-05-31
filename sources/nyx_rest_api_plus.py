@@ -41,6 +41,7 @@ v3.18.0 AMA 26/Sep/2025  Added elastic 8 support
 v3.18.7 AMA 18/Apr/2026  Re added datasource via API
 v3.18.8 AMA 18/Apr/2026  AMQC privilege added to login and logout
 v3.18.9 AMA 16/May/2026  Datasource endpoint supports flat parameter to return records directly
+v3.19.0 AMA 31/May/2026  Pydantic for configuration and environment variables
 """
 
 import re
@@ -110,7 +111,7 @@ from opensearchpy import OpenSearch as ES, RequestsHttpConnection as RC
 from auth.auth_ad import authenticate_ad
 from auth.role_mapper import extract_roles_from_ad
 
-VERSION="3.18.9"
+VERSION="3.19.0"
 MODULE="nyx_rest"+"_"+str(os.getpid())
 
 WELCOME=os.environ["WELCOMEMESSAGE"]
