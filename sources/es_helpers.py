@@ -54,7 +54,7 @@ def refresh_translations():
 
 
 def get_translated_item(language, area, item):
-    if area not in state.translations[language]:
+    if language not in state.translations or area not in state.translations[language]:
         return item
     if item not in state.translations[language][area]:
         return item
