@@ -43,7 +43,8 @@ v3.18.8 AMA 18/Apr/2026  AMQC privilege added to login and logout
 v3.18.9 AMA 16/May/2026  Datasource endpoint supports flat parameter to return records directly
 v3.19.0 AMA 31/May/2026  Pydantic for configuration and environment variables
 v3.20.0 AMA 31/May/2026  Split into multiple modules
-v3.21.      0 AMA 31/May/2026  Fix datasource endpoint when using ELK SQL and ELK SSL
+v3.21.0 AMA 31/May/2026  Fix datasource endpoint when using ELK SQL and ELK SSL
+v3.21.1 AMA 24/Jun/2026  Fix a translation issue in menus
 """
 
 import os
