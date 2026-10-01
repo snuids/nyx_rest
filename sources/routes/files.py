@@ -269,6 +269,7 @@ def register(app, api, name_space):
                 ret.content_type = 'zipfile'
                 return ret
 
+        @token_required()
         @api.expect(filesPostAPI)
         def post(self, user=None):
             rec_id = request.args["rec_id"]

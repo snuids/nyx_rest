@@ -47,6 +47,8 @@ v3.21.1 AMA 24/Jun/2026  Fix a translation issue in menus
 v3.21.2 AMA 01/Oct/2026  Security: restrict /streamfile to allowed roots
 v3.21.3 AMA 01/Oct/2026  Security: remove tokens and credentials from logs
 v3.21.4 AMA 01/Oct/2026  Fix SQL Server CRUD (POST/DELETE used the Postgres connection)
+v3.21.5 AMA 01/Oct/2026  Require a token for /files uploads
+v3.21.6 AMA 01/Oct/2026  Restore /streamfile access to /logs by default
 """
 
 import os

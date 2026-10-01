@@ -4,7 +4,15 @@
 ![badge](https://img.shields.io/github/languages/code-size/snuids/nyx_rest)
 ![badge](https://img.shields.io/github/last-commit/snuids/nyx_rest)
 
-NYX Rest API
+NYX Rest API (version 3.21.6).
+
+The `/api/v1/files` endpoint requires a valid `token` query parameter for both
+downloads (GET) and uploads (POST).
+
+`/api/v1/streamfile` allows files under `/logs` by default. To stream files
+from other directories, set `STREAM_ALLOWED_ROOTS` to a comma-separated list
+of allowed roots (include `/logs` if log streaming should remain available).
+File-system app roots are also allowed. Requests still require a valid token.
 
 # Run
 
@@ -44,4 +52,3 @@ export PG_DATABASE=nyx
 echo "Variables SET"
 python nyx_rest_api_plus.py 
 ```
-

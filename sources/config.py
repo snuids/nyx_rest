@@ -26,9 +26,10 @@ class Settings(BaseSettings):
     OUTPUT_FOLDER: str = ""
     OUTPUT_URL: str = ""
 
-    # Allowed roots for /streamfile (comma separated). The rootpath of every
-    # "file-system" app found in nyx_app is always allowed in addition to these.
-    STREAM_ALLOWED_ROOTS: str = ""
+    # Allowed roots for /streamfile (comma separated). Preserve access to the
+    # standard log directory; deployments can override this with other roots.
+    # The rootpath of every "file-system" app is also allowed.
+    STREAM_ALLOWED_ROOTS: str = "/logs"
 
     # PostgreSQL
     PG_LOGIN: str = ""
