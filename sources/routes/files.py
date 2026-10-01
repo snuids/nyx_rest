@@ -13,12 +13,14 @@ from pathlib import Path
 from zipfile import ZipFile
 
 import flask
+from cachetools import cached, TTLCache
 from flask import request, send_file
 from flask_restx import Resource, fields
 
 import state
+from config import settings
 from middleware import token_required, check_post_parameters
-from helpers.disk_helper import list_dir
+from helpers.disk_helper import list_dir, is_path_within_roots
 
 logger = logging.getLogger()
 
@@ -46,6 +48,40 @@ def retrieve_app_info(rec_id):
         logger.error(e)
 
     return None, None
+
+
+@cached(cache=TTLCache(maxsize=1, ttl=300))
+def _discover_app_roots(es, elkversion):
+    """Return the rootpath of every "file-system" app declared in nyx_app."""
+    roots = []
+    try:
+        if elkversion >= 7:
+            res = es.search(index="nyx_app", body={"size": 1000})
+        else:
+            res = es.search(index="nyx_app", body={"size": 1000}, doc_type="doc")
+
+        for hit in res["hits"]["hits"]:
+            source = hit.get("_source", {})
+            if source.get("type") == "file-system":
+                root = source.get("config", {}).get("rootpath")
+                if root:
+                    roots.append(root)
+    except Exception:
+        logger.error("Unable to discover file-system app roots", exc_info=True)
+
+    return roots
+
+
+def get_allowed_stream_roots():
+    """Roots under which /streamfile is allowed to read.
+
+    Configured via STREAM_ALLOWED_ROOTS and the rootpath of every
+    "file-system" app. Returns an empty list when nothing is configured,
+    in which case every /streamfile request is denied.
+    """
+    roots = [r.strip() for r in settings.STREAM_ALLOWED_ROOTS.split(",") if r.strip()]
+    roots += _discover_app_roots(state.es, state.elkversion)
+    return roots
 
 
 def remove_prefix(text, prefix):
@@ -304,6 +340,10 @@ def register(app, api, name_space):
         def get(self, user=None):
             logger.info(user)
             file_path = request.args["file"]
+
+            if not is_path_within_roots(file_path, get_allowed_stream_roots()):
+                logger.warning(f"streamfile denied for path: {file_path}")
+                return {"data": "", "error": "not allowed"}
 
             if not os.path.isfile(file_path):
                 return {"data": "", "error": "File not found"}
