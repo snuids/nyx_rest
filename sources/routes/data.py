@@ -21,6 +21,7 @@ from db_postgres import get_postgres_connection
 from es_helpers import can_use_indice
 from common import loadData, get_mappings, kibanaData
 from pg_common import loadPGData, getAppByID, get_sql_server_connection
+from helpers.sql_queries import build_crud_query
 
 logger = logging.getLogger()
 
@@ -309,10 +310,10 @@ def register(app, api, name_space):
                 db_type = ap["_source"]["config"].get("databaseType", "postgres")
 
         if met == 'get':
-            if isinstance(pkey, str):
-                query = "select * from \"" + index + "\" where " + col + "='" + str(pkey + "'")
-            else:
-                query = "select * from \"" + index + "\" where " + col + "=" + str(pkey)
+            try:
+                query, params = build_crud_query(db_type, met, index, col, pkey)
+            except ValueError:
+                return {'error': "invalid SQL identifier"}
 
             description = None
 
@@ -328,8 +329,10 @@ def register(app, api, name_space):
                         return -1
 
                 sqconn = get_sql_server_connection(ap)
+                if sqconn is None:
+                    return {'error': "unable to connect to database"}
                 with sqconn.cursor() as cursor:
-                    cursor.execute(query)
+                    cursor.execute(query, params)
                     res = cursor.fetchone()
                     description = [
                         {"col": x[0], "type": convert_sql_server_type_to_python_type(x[1].__name__)}
@@ -349,7 +352,7 @@ def register(app, api, name_space):
                 sqconn.commit()
             else:
                 with get_postgres_connection().cursor() as cursor:
-                    cursor.execute(query)
+                    cursor.execute(query, params)
                     res = cursor.fetchone()
                     description = [{"col": x[0], "type": x[1]} for x in cursor.description]
 
@@ -368,8 +371,14 @@ def register(app, api, name_space):
         elif met == 'post':
             data = request.data.decode("utf-8")
             logger.info("CREATE/UPDATE RECORD")
-            logger.info(data)
             data = json.loads(data)
+
+            try:
+                query, params = build_crud_query(
+                    db_type, met, index, col, pkey, data["record"]
+                )
+            except (KeyError, TypeError, ValueError):
+                return {'error': "invalid record"}
 
             if db_type == "sqlserver":
                 dbconn = get_sql_server_connection(ap)
@@ -380,29 +389,9 @@ def register(app, api, name_space):
                 logger.error("No database connection available for record create/update.")
                 return {'error': "unable to connect to database"}
 
-            if pkey != "NEW":
-                query = "UPDATE \"" + index + "\" set "
-                cols = ",".join(
-                    ["" + str(_["key"]) + "='" + str(_["value"]) + "' " for _ in data["record"]]
-                )
-                query += cols
-                query += " where " + col + "=" + str(pkey)
-                logger.info(query)
-                with dbconn.cursor() as cursor:
-                    res = cursor.execute(query)
-                    logger.info(res)
-                dbconn.commit()
-            else:
-                query = "INSERT INTO \"" + index + "\"  "
-                cols = ",".join(["" + str(_["key"]) + "" for _ in data["record"]])
-                query += "(" + cols + ") VALUES ("
-                vals = ",".join(["'" + str(_["value"]) + "'" for _ in data["record"]])
-                query += vals + ")"
-                logger.info(query)
-                with dbconn.cursor() as cursor:
-                    res = cursor.execute(query)
-                    logger.info(res)
-                dbconn.commit()
+            with dbconn.cursor() as cursor:
+                cursor.execute(query, params)
+            dbconn.commit()
 
             return {'error': ""}
 
@@ -417,11 +406,9 @@ def register(app, api, name_space):
                     logger.error("No database connection available for record delete.")
                     return {'error': "unable to connect to database"}
 
+                query, params = build_crud_query(db_type, met, index, col, pkey)
                 with dbconn.cursor() as cursor:
-                    query = (
-                        "delete from \"" + index + "\" where " + col + "=" + str(pkey)
-                    )
-                    cursor.execute(query)
+                    cursor.execute(query, params)
                 dbconn.commit()
             except:
                 logger.error("Unable to delete record.", exc_info=True)
