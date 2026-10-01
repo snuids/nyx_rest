@@ -190,6 +190,7 @@ state.conn = amqstompclient.AMQClient(
 # ---------------------------------------------------------------------------
 logger.info(settings.ELK_SSL)
 
+
 if settings.ELK_SSL:
     state.es = ES(
         hosts=[f"https://{settings.ELK_URL}"],
