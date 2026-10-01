@@ -46,6 +46,7 @@ v3.21.0 AMA 31/May/2026  Fix datasource endpoint when using ELK SQL and ELK SSL
 v3.21.1 AMA 24/Jun/2026  Fix a translation issue in menus
 v3.21.2 AMA 01/Oct/2026  Security: restrict /streamfile to allowed roots
 v3.21.3 AMA 01/Oct/2026  Security: remove tokens and credentials from logs
+v3.21.4 AMA 01/Oct/2026  Fix SQL Server CRUD (POST/DELETE used the Postgres connection)
 """
 
 import os

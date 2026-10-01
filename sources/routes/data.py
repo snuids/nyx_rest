@@ -371,6 +371,15 @@ def register(app, api, name_space):
             logger.info(data)
             data = json.loads(data)
 
+            if db_type == "sqlserver":
+                dbconn = get_sql_server_connection(ap)
+            else:
+                dbconn = get_postgres_connection()
+
+            if dbconn is None:
+                logger.error("No database connection available for record create/update.")
+                return {'error': "unable to connect to database"}
+
             if pkey != "NEW":
                 query = "UPDATE \"" + index + "\" set "
                 cols = ",".join(
@@ -379,10 +388,10 @@ def register(app, api, name_space):
                 query += cols
                 query += " where " + col + "=" + str(pkey)
                 logger.info(query)
-                with get_postgres_connection().cursor() as cursor:
+                with dbconn.cursor() as cursor:
                     res = cursor.execute(query)
                     logger.info(res)
-                state.pg_connection.commit()
+                dbconn.commit()
             else:
                 query = "INSERT INTO \"" + index + "\"  "
                 cols = ",".join(["" + str(_["key"]) + "" for _ in data["record"]])
@@ -390,21 +399,30 @@ def register(app, api, name_space):
                 vals = ",".join(["'" + str(_["value"]) + "'" for _ in data["record"]])
                 query += vals + ")"
                 logger.info(query)
-                with get_postgres_connection().cursor() as cursor:
+                with dbconn.cursor() as cursor:
                     res = cursor.execute(query)
                     logger.info(res)
-                state.pg_connection.commit()
+                dbconn.commit()
 
             return {'error': ""}
 
         elif met == 'delete':
             try:
-                with state.pg_connection.cursor() as cursor:
+                if db_type == "sqlserver":
+                    dbconn = get_sql_server_connection(ap)
+                else:
+                    dbconn = get_postgres_connection()
+
+                if dbconn is None:
+                    logger.error("No database connection available for record delete.")
+                    return {'error': "unable to connect to database"}
+
+                with dbconn.cursor() as cursor:
                     query = (
                         "delete from \"" + index + "\" where " + col + "=" + str(pkey)
                     )
                     cursor.execute(query)
-                state.pg_connection.commit()
+                dbconn.commit()
             except:
                 logger.error("Unable to delete record.", exc_info=True)
                 return {'error': "unable to delete record"}
