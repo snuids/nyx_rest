@@ -51,6 +51,7 @@ v3.21.5 AMA 01/Oct/2026  Require a token for /files uploads
 v3.21.6 AMA 01/Oct/2026  Restore /streamfile access to /logs by default
 v3.21.7 01/Oct/2026  Reject missing two-factor codes, consume valid codes, and stop logging them
 v3.21.8 01/Oct/2026  Parameterize PostgreSQL and SQL Server generic CRUD queries
+v3.21.9 01/Oct/2026  Restrict file operations to authorized app roots and log access
 """
 
 import os

@@ -4,14 +4,50 @@ import logging
 
 logger = logging.getLogger()
 
-def list_dir(dir_path, rel_path, regex):
+def resolve_under_root(root, *parts):
+    """Resolve a relative path, rejecting traversal and symlinks outside root."""
+    if not root or any(not isinstance(part, str) or os.path.isabs(part) for part in parts):
+        raise ValueError("not allowed")
+    real_root = os.path.realpath(root)
+    target = os.path.realpath(os.path.join(real_root, *parts))
+    if os.path.commonpath([real_root, target]) != real_root:
+        raise ValueError("not allowed")
+    return target
+
+
+def can_access_file_app(app, user):
+    privileges = app.get("privileges", [])
+    user_privileges = user.get("privileges", [])
+    return "admin" in user_privileges or not privileges or any(
+        privilege in privileges for privilege in user_privileges
+    )
+
+
+def can_access_logs(user):
+    return "admin" in user.get("privileges", []) or "logs" in user.get("privileges", [])
+
+
+def get_all_file_paths(directory, allowed_root):
+    file_paths = []
+    for root, directories, files in os.walk(directory):
+        directories[:] = [name for name in directories
+                          if is_path_within_roots(os.path.join(root, name), [allowed_root])]
+        for filename in files:
+            filepath = os.path.join(root, filename)
+            if is_path_within_roots(filepath, [allowed_root]):
+                file_paths.append(filepath)
+    return file_paths
+
+
+def list_dir(dir_path, rel_path, regex, allowed_root=None):
     try:
         dir_list = os.listdir(dir_path)
         
         ret = []        
         for i in dir_list:
             path = os.path.abspath(dir_path+'/'+i)
-            print(path)
+            if allowed_root is not None and not is_path_within_roots(path, [allowed_root]):
+                continue
 
             stats = os.stat(path)
             obj_name = path.split('/')[-1]

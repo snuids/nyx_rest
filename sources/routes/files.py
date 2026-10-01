@@ -6,6 +6,7 @@ streamfile, and upload endpoint. Also contains file utility helpers.
 import os
 import json
 import base64
+import binascii
 import string
 import random
 import logging
@@ -20,7 +21,10 @@ from flask_restx import Resource, fields
 import state
 from config import settings
 from middleware import token_required, check_post_parameters
-from helpers.disk_helper import list_dir, is_path_within_roots
+from helpers.disk_helper import (
+    list_dir, get_all_file_paths, is_path_within_roots, resolve_under_root,
+    can_access_file_app, can_access_logs,
+)
 
 logger = logging.getLogger()
 
@@ -29,15 +33,14 @@ logger = logging.getLogger()
 # File utility helpers
 # ---------------------------------------------------------------------------
 
-def retrieve_app_info(rec_id):
+def retrieve_app_info(rec_id, user):
     try:
         if state.elkversion >= 7:
             app = state.es.get(index="nyx_app", id=rec_id)
         else:
             app = state.es.get(index="nyx_app", doc_type="doc", id=rec_id)
 
-        logger.info(app)
-        if app['_source']['type'] == 'file-system':
+        if app['_source']['type'] == 'file-system' and can_access_file_app(app['_source'], user):
             regex = ''
             if 'regex' in app['_source']['config']:
                 regex = app['_source']['config']['regex']
@@ -52,7 +55,7 @@ def retrieve_app_info(rec_id):
 
 @cached(cache=TTLCache(maxsize=1, ttl=300))
 def _discover_app_roots(es, elkversion):
-    """Return the rootpath of every "file-system" app declared in nyx_app."""
+    """Return file-system apps; privilege checks are done per request."""
     roots = []
     try:
         if elkversion >= 7:
@@ -65,43 +68,33 @@ def _discover_app_roots(es, elkversion):
             if source.get("type") == "file-system":
                 root = source.get("config", {}).get("rootpath")
                 if root:
-                    roots.append(root)
+                    roots.append((root, source))
     except Exception:
         logger.error("Unable to discover file-system app roots", exc_info=True)
 
     return roots
 
 
-def get_allowed_stream_roots():
+def get_allowed_stream_roots(user):
     """Roots under which /streamfile is allowed to read.
 
-    Configured via STREAM_ALLOWED_ROOTS and the rootpath of every
-    "file-system" app. Returns an empty list when nothing is configured,
-    in which case every /streamfile request is denied.
+    App roots require access to that app. Configured roots are admin-only,
+    except /logs, which is also available to users with the logs privilege.
     """
-    roots = [r.strip() for r in settings.STREAM_ALLOWED_ROOTS.split(",") if r.strip()]
-    roots += _discover_app_roots(state.es, state.elkversion)
+    configured = [r.strip() for r in settings.STREAM_ALLOWED_ROOTS.split(",") if r.strip()]
+    roots = []
+    if "/logs" in configured and can_access_logs(user):
+        roots.append("/logs")
+    if "admin" in user.get("privileges", []):
+        roots += configured
+    roots += [root for root, app in _discover_app_roots(state.es, state.elkversion)
+              if can_access_file_app(app, user)]
     return roots
-
-
-def remove_prefix(text, prefix):
-    if text.startswith(prefix):
-        return text[len(prefix):]
-    return text
 
 
 def randomString(stringLength):
     letters = string.ascii_letters
     return ''.join(random.choice(letters) for i in range(stringLength))
-
-
-def get_all_file_paths(directory):
-    file_paths = []
-    for root, directories, files in os.walk(directory):
-        for filename in files:
-            filepath = os.path.join(root, filename)
-            file_paths.append(filepath)
-    return file_paths
 
 
 def read_last_bytes(file_path, num_bytes):
@@ -136,25 +129,23 @@ def register(app, api, name_space):
             req = json.loads(request.data.decode("utf-8"))
             path = req['path']
 
-            if req['rec_id'] == -1:
-                prepath = "/"
+            if str(req['rec_id']) == '-1':
+                if not can_access_logs(user):
+                    return {'error': "not allowed"}
+                prepath = "/logs"
                 regex = r".*\.log$"
             else:
-                prepath, regex = retrieve_app_info(req['rec_id'])
+                prepath, regex = retrieve_app_info(req['rec_id'], user)
 
             if prepath is None:
                 return {'error': "unknown app"}
 
-            prepath = os.path.abspath(prepath)
-            logger.info(f"prepath : {prepath}")
-
-            dirpath = os.path.abspath(f"{prepath}/{path}")
-            logger.info(f"dirpath : {dirpath}")
-
-            if not dirpath.startswith(prepath):
+            try:
+                dirpath = resolve_under_root(prepath, "" if path == "/" else path)
+            except ValueError:
                 return {'error': "not allowed"}
 
-            return list_dir(dirpath, path, regex)
+            return list_dir(dirpath, path, regex, prepath)
 
     filesPostAPI = api.model('files_post_model', {
         'data': fields.String(description="A file in base64 format", required=True),
@@ -178,96 +169,55 @@ def register(app, api, name_space):
             logger.info(f"path    : {path}")
 
             if rec_id == '-1':
-                prepath = "/"
+                if not can_access_logs(user):
+                    return {'error': "not allowed"}
+                prepath = "/logs"
                 regex = r".*\.log$"
             else:
-                prepath, regex = retrieve_app_info(rec_id)
+                prepath, regex = retrieve_app_info(rec_id, user)
 
             if prepath is None:
                 return {'error': "unknown app"}
 
-            prepath = os.path.abspath(prepath)
-            logger.info(f"prepath : {prepath}")
-
-            dirpath = os.path.abspath(f"{prepath}/{path}")
-            logger.info(f"dirpath : {dirpath}")
-
-            if not dirpath.startswith(prepath):
+            try:
+                dirpath = resolve_under_root(prepath, "" if path == "/" else path)
+            except ValueError:
                 return {'error': "not allowed"}
 
-            if len(files_list) == 0:
+            if not files_list or not all(files_list):
                 return {'error': 'error in file format'}
-            elif len(files_list) == 1:
-                if rec_id == '-1':
-                    objpath = os.path.abspath(f"{dirpath}")
-                    files_list[0] = files_list[0].split('/')[-1]
-                else:
-                    objpath = os.path.abspath(f"{dirpath}/{files_list[0]}")
 
-                logger.info(f"objpath : {objpath}")
-
-                if not objpath.startswith(prepath):
+            filepaths_list = []
+            for fil in files_list:
+                try:
+                    objpath = resolve_under_root(dirpath, fil)
+                except ValueError:
                     return {'error': "not allowed"}
 
+                if len(files_list) == 1 and os.path.isfile(objpath):
+                    return flask.send_file(objpath, download_name=os.path.basename(fil))
                 if os.path.isfile(objpath):
-                    return flask.send_file(objpath, download_name=files_list[0])
+                    filepaths_list.append(objpath)
                 elif os.path.isdir(objpath):
-                    logger.info(get_all_file_paths(objpath))
-                    filepaths_list = get_all_file_paths(objpath)
-                    zip_file_name = f"{randomString(10)}.zip"
+                    filepaths_list += get_all_file_paths(objpath, dirpath)
 
-                    Path("./zip_folder").mkdir(parents=True, exist_ok=True)
+            zip_file_name = f"{randomString(10)}.zip"
+            Path("./zip_folder").mkdir(parents=True, exist_ok=True)
+            zip_path = os.path.abspath(f"./zip_folder/{zip_file_name}")
 
-                    with ZipFile(f"./zip_folder/{zip_file_name}", 'w') as zip_:
-                        for file in filepaths_list:
-                            fname = f".{remove_prefix(file, dirpath)}"
-                            zip_.write(file, fname)
-
-                    logger.info(os.path.abspath(f"./zip_folder/{zip_file_name}"))
-
-                    ret = send_file(
-                        os.path.abspath(f"./zip_folder/{zip_file_name}"),
-                        download_name=files_list[0],
-                    )
-                    ret.content_type = 'zipfile'
-                    os.remove(f"./zip_folder/{zip_file_name}")
-                    return ret
-            else:
-                filepaths_list = []
-
-                for fil in files_list:
-                    objpath = os.path.abspath(f"{dirpath}/{fil}")
-
-                    if not objpath.startswith(prepath):
-                        return {'error': "not allowed"}
-
-                    logger.info(f"****{fil}   -> {objpath}    -  {os.path.isfile(objpath)}")
-
-                    if os.path.isfile(objpath):
-                        filepaths_list.append(objpath)
-                    elif os.path.isdir(objpath):
-                        logger.info(get_all_file_paths(objpath))
-                        filepaths_list += get_all_file_paths(objpath)
-
-                logger.info(filepaths_list)
-
-                zip_file_name = f"{randomString(10)}.zip"
-                Path("./zip_folder").mkdir(parents=True, exist_ok=True)
-
-                with ZipFile(f"./zip_folder/{zip_file_name}", 'w') as zip_:
+            try:
+                with ZipFile(zip_path, 'w') as zip_:
                     for file in filepaths_list:
-                        fname = f".{remove_prefix(file, dirpath)}"
-                        zip_.write(file, fname)
+                        if not is_path_within_roots(file, [dirpath]):
+                            return {'error': "not allowed"}
+                        zip_.write(file, os.path.join('.', os.path.relpath(file, dirpath)))
 
-                logger.info(os.path.abspath(f"./zip_folder/{zip_file_name}"))
-
-                ret = send_file(
-                    os.path.abspath(f"./zip_folder/{zip_file_name}"),
-                    download_name=files_list[0],
-                )
-                os.remove(f"./zip_folder/{zip_file_name}")
+                ret = send_file(zip_path, download_name=os.path.basename(files_list[0]))
                 ret.content_type = 'zipfile'
                 return ret
+            finally:
+                if os.path.exists(zip_path):
+                    os.remove(zip_path)
 
         @token_required()
         @api.expect(filesPostAPI)
@@ -278,45 +228,34 @@ def register(app, api, name_space):
             req = json.loads(request.data.decode("utf-8"))
             files_list = req['files']
 
-            prepath, regex = retrieve_app_info(rec_id)
+            prepath, regex = retrieve_app_info(rec_id, user)
 
             if prepath is None:
                 return {'error': "unknown app"}
 
-            prepath = os.path.abspath(prepath)
-            logger.info(f"prepath : {prepath}")
-
-            dirpath = os.path.abspath(f"{prepath}/{path}")
-            logger.info(f"dirpath : {dirpath}")
-
-            if not dirpath.startswith(prepath):
+            try:
+                dirpath = resolve_under_root(prepath, "" if path == "/" else path)
+            except ValueError:
                 return {'error': "not allowed"}
-            if len(files_list) == 0:
+            if not files_list:
                 return {'error': 'error in file format'}
-            if len(files_list) >= 1:
-                for _file in files_list:
-                    _file = files_list[0]
-                    data_file_to_upload = base64.b64decode(_file['data'])
-                    file_name = _file['file_name']
 
-                    filepath = os.path.abspath(f"{dirpath}/{_file['file_name']}")
-                    logger.info(f"filepath : {filepath}")
+            try:
+                uploads = [(resolve_under_root(dirpath, item['file_name']), item['data'])
+                           for item in files_list]
+            except (KeyError, TypeError, ValueError):
+                return {'error': "not allowed"}
 
-                    if not filepath.startswith(prepath):
-                        return {'error': "not allowed"}
+            for filepath, encoded_data in uploads:
+                try:
+                    file_data = base64.b64decode(encoded_data)
+                    with open(filepath, "wb") as new_file:
+                        new_file.write(file_data)
+                except (OSError, ValueError, TypeError, binascii.Error):
+                    logger.error("unable to write file %s", filepath, exc_info=True)
+                    return {'error': "unable to write file"}
 
-                    try:
-                        newFile = open(filepath, "wb")
-                        bytearr = bytearray(data_file_to_upload)
-                        newFile.write(bytearr)
-                    except:
-                        logger.error(f"unable to write file {filepath}")
-                    finally:
-                        newFile.close()
-
-                return {"error": ""}
-            else:
-                return {'error': 'dont handle multiple files upload for now'}
+            return {"error": ""}
 
     @name_space.route('/reloadconfig')
     class reloadConfig(Resource):
@@ -342,7 +281,7 @@ def register(app, api, name_space):
             logger.info(user)
             file_path = request.args["file"]
 
-            if not is_path_within_roots(file_path, get_allowed_stream_roots()):
+            if not is_path_within_roots(file_path, get_allowed_stream_roots(user)):
                 logger.warning(f"streamfile denied for path: {file_path}")
                 return {"data": "", "error": "not allowed"}
 

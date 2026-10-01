@@ -4,7 +4,12 @@
 ![badge](https://img.shields.io/github/languages/code-size/snuids/nyx_rest)
 ![badge](https://img.shields.io/github/last-commit/snuids/nyx_rest)
 
-NYX Rest API (version 3.21.8).
+NYX Rest API (version 3.21.9).
+
+File listing, downloads, uploads, and ZIPs stay within the selected file-system
+app's root and require the app's privileges. For `rec_id=-1`, paths are relative
+to `/logs` and require the `logs` or `admin` privilege. `/streamfile` likewise
+checks app privileges; configured extra stream roots are available to admins.
 
 Generic SQL CRUD requests now bind values as query parameters and safely quote
 table and column names for both PostgreSQL and SQL Server.
@@ -18,7 +23,8 @@ downloads (GET) and uploads (POST).
 `/api/v1/streamfile` allows files under `/logs` by default. To stream files
 from other directories, set `STREAM_ALLOWED_ROOTS` to a comma-separated list
 of allowed roots (include `/logs` if log streaming should remain available).
-File-system app roots are also allowed. Requests still require a valid token.
+File-system app roots are also allowed for users with access to the app. Requests
+still require a valid token and the corresponding privileges.
 
 # Run
 
