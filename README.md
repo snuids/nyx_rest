@@ -7,8 +7,9 @@
 NYX Rest API (version 3.21.9).
 
 File listing, downloads, uploads, and ZIPs stay within the selected file-system
-app's root and require the app's privileges. For `rec_id=-1`, paths are relative
-to `/logs` and require the `logs` or `admin` privilege. `/streamfile` likewise
+app's root and require the app's privileges. For `rec_id=-1`, paths may be
+relative to `/logs` or begin with `/logs` (as used by the logs UI), and require
+the `logs` or `admin` privilege. `/streamfile` likewise
 checks app privileges; configured extra stream roots are available to admins.
 
 Generic SQL CRUD requests now bind values as query parameters and safely quote

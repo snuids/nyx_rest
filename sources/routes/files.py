@@ -23,6 +23,7 @@ from config import settings
 from middleware import token_required, check_post_parameters
 from helpers.disk_helper import (
     list_dir, get_all_file_paths, is_path_within_roots, resolve_under_root,
+    normalize_log_path,
     can_access_file_app, can_access_logs,
 )
 
@@ -133,15 +134,17 @@ def register(app, api, name_space):
                 if not can_access_logs(user):
                     return {'error': "not allowed"}
                 prepath = "/logs"
+                relative_path = normalize_log_path(path)
                 regex = r".*\.log$"
             else:
                 prepath, regex = retrieve_app_info(req['rec_id'], user)
+                relative_path = "" if path == "/" else path
 
             if prepath is None:
                 return {'error': "unknown app"}
 
             try:
-                dirpath = resolve_under_root(prepath, "" if path == "/" else path)
+                dirpath = resolve_under_root(prepath, relative_path)
             except ValueError:
                 return {'error': "not allowed"}
 
@@ -172,20 +175,26 @@ def register(app, api, name_space):
                 if not can_access_logs(user):
                     return {'error': "not allowed"}
                 prepath = "/logs"
+                relative_path = normalize_log_path(path)
                 regex = r".*\.log$"
             else:
                 prepath, regex = retrieve_app_info(rec_id, user)
+                relative_path = "" if path == "/" else path
 
             if prepath is None:
                 return {'error': "unknown app"}
 
             try:
-                dirpath = resolve_under_root(prepath, "" if path == "/" else path)
+                dirpath = resolve_under_root(prepath, relative_path)
             except ValueError:
                 return {'error': "not allowed"}
 
             if not files_list or not all(files_list):
                 return {'error': 'error in file format'}
+
+            # Older logs clients send the selected file itself as `path`.
+            if rec_id == '-1' and os.path.isfile(dirpath):
+                return flask.send_file(dirpath, download_name=os.path.basename(dirpath))
 
             filepaths_list = []
             for fil in files_list:

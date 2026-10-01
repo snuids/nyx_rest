@@ -15,6 +15,15 @@ def resolve_under_root(root, *parts):
     return target
 
 
+def normalize_log_path(path):
+    """Accept legacy /logs paths as well as paths relative to /logs."""
+    if path == "/logs":
+        return ""
+    if isinstance(path, str) and path.startswith("/logs/"):
+        return path[len("/logs/"):]
+    return path
+
+
 def can_access_file_app(app, user):
     privileges = app.get("privileges", [])
     user_privileges = user.get("privileges", [])

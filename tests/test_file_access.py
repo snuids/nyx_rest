@@ -7,7 +7,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "sources"))
 
 from helpers.disk_helper import (
     can_access_file_app, can_access_logs, get_all_file_paths, list_dir,
-    resolve_under_root,
+    normalize_log_path, resolve_under_root,
 )
 
 
@@ -55,6 +55,19 @@ class FileAccessTests(unittest.TestCase):
         self.assertTrue(can_access_file_app(app, {"privileges": ["admin"]}))
         self.assertFalse(can_access_logs({"privileges": ["user"]}))
         self.assertTrue(can_access_logs({"privileges": ["logs"]}))
+
+    def test_legacy_log_paths_stay_within_log_root(self):
+        with tempfile.TemporaryDirectory() as logs:
+            self.assertEqual(resolve_under_root(logs, normalize_log_path("/logs")),
+                             str(Path(logs).resolve()))
+            self.assertEqual(resolve_under_root(logs, normalize_log_path("/logs/api.log")),
+                             str((Path(logs) / "api.log").resolve()))
+            self.assertEqual(resolve_under_root(logs, normalize_log_path("api.log")),
+                             str((Path(logs) / "api.log").resolve()))
+            for path in ("/etc/passwd", "/logs-private/secret", "/logs/../../etc/passwd",
+                         "/logs//etc/passwd"):
+                with self.subTest(path=path), self.assertRaises(ValueError):
+                    resolve_under_root(logs, normalize_log_path(path))
 
 
 if __name__ == "__main__":
