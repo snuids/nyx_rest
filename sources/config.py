@@ -75,5 +75,9 @@ class Settings(BaseSettings):
     # Onfleet
     ONFLEET_APIKEY: str = ""
 
+    # GitHub OAuth / JWT signing
+    OAUTH_CLIENT_SECRET: str = ""
+    JWT_SECRET: str = ""
+
 
 settings = Settings()

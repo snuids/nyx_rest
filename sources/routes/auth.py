@@ -97,7 +97,7 @@ def register(api, name_space):
             data = json.loads(request.data.decode("utf-8"))
 
             post_data = {
-                "client_secret": "REDACTED",
+                "client_secret": settings.OAUTH_CLIENT_SECRET,
                 "client_id": data["clientId"],
                 "code": data["code"],
             }
@@ -120,7 +120,7 @@ def register(api, name_space):
                     'iat': datetime.utcnow(),
                     'exp': datetime.utcnow() + timedelta(minutes=30),
                 },
-                "REDACTED",
+                settings.JWT_SECRET,
             )
 
             return jsonify({
