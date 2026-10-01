@@ -23,6 +23,7 @@ from middleware import token_required, check_post_parameters, pushHistoryToELK, 
 from kibana_helpers import computeMenus
 from common import loadData
 from auth.auth_ad import authenticate_ad
+from auth.double_phase import verify_double_code
 from auth.role_mapper import extract_roles_from_ad
 
 logger = logging.getLogger()
@@ -287,17 +288,13 @@ def register(api, name_space):
                     if usr["_source"].get("doublePhase", False) is True:
                         if "doublecode" in data:
                             logger.info("Must check code")
-                            codeindb = state.redisserver.get("nyx_double_" + data["login"])
-                            if codeindb is not None:
-                                codeindb = codeindb.decode("ascii")
-                            logger.info("In redis: <redacted>, submitted: <redacted>")
-                            if str(codeindb) != data["doublecode"]:
-                                state.redisserver.delete("nyx_double_" + data["login"])
+                            if not verify_double_code(
+                                state.redisserver, data["login"], data["doublecode"]
+                            ):
                                 return jsonify({'error': "ErrorDoublePhase"})
                         else:
                             randint = "" + str(random.randint(10000, 99999))
                             state.redisserver.set("nyx_double_" + data["login"], randint, 120)
-                            logger.info("Code is " + randint)
                             state.conn.send_message(
                                 "/topic/AUTH_SMS",
                                 json.dumps({

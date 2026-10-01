@@ -4,7 +4,10 @@
 ![badge](https://img.shields.io/github/languages/code-size/snuids/nyx_rest)
 ![badge](https://img.shields.io/github/last-commit/snuids/nyx_rest)
 
-NYX Rest API (version 3.21.6).
+NYX Rest API (version 3.21.7).
+
+Two-factor login now rejects missing or expired verification codes and consumes
+a valid code after use. Verification codes are no longer written to the log.
 
 The `/api/v1/files` endpoint requires a valid `token` query parameter for both
 downloads (GET) and uploads (POST).
