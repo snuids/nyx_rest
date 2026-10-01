@@ -31,7 +31,7 @@ def create_sql_server_connection(config):
         port=settings.SQLSERVER_PORT
     
         connectionString = f'DRIVER={{ODBC Driver 18 for SQL Server}};SERVER={server};DATABASE={database};UID={user};PWD={password};PORT={port};TrustServerCertificate=yes;'
-        logger.info("Connection String: "+connectionString)
+        logger.info(f"Connecting to SQL Server {server}:{port} database {database} as {user}")
         conn = pyodbc.connect(connectionString)
 
         return conn

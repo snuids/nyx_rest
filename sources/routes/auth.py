@@ -19,7 +19,7 @@ from datetime import datetime, timedelta
 
 import state
 from config import settings
-from middleware import token_required, check_post_parameters, pushHistoryToELK
+from middleware import token_required, check_post_parameters, pushHistoryToELK, fingerprint
 from kibana_helpers import computeMenus
 from common import loadData
 from auth.auth_ad import authenticate_ad
@@ -32,7 +32,7 @@ def setACookie(privilege, privileges, resp, token):
     if "admin" in privileges or (len(privileges) > 0 and privilege in privileges):
         state.redisserver.set("nyx_" + privilege.lower() + "_" + str(token), "OK", 3600 * 24)
         logger.info("Setting cookie for " + privilege)
-        logger.info(str(token))
+        logger.info("Token fingerprint " + fingerprint(token))
         a = resp.set_cookie('nyx_' + privilege.lower(), str(token),
                             secure=state.COOKIESECURE, httponly=True)
         logger.info(a)
@@ -50,8 +50,8 @@ def finalize_login(usr, data, es, conn):
     try:
         state.redisserver.set("nyx_tok_" + str(token), json.dumps(usr["_source"]), 3600 * 24)
     except:
-        logger.error("Unable to set redis token for " + str(token), exc_info=True)
-        raise Exception("Unable to set redis token for " + str(token))
+        logger.error("Unable to set redis token for " + fingerprint(token), exc_info=True)
+        raise Exception("Unable to set redis token for " + fingerprint(token))
 
     apptag = data.get("app", "console")
     finalcategory = computeMenus(usr, str(token), apptag)
@@ -102,7 +102,7 @@ def register(api, name_space):
             }
 
             r = requests.post('https://github.com/login/oauth/access_token', data=post_data)
-            logger.info(r.text)
+            logger.info("GitHub access token exchange status: %s", r.status_code)
             dict_ = {x[0]: x[1] for x in [x.split("=") for x in r.text.split("&")]}
 
             r2 = requests.get('https://api.github.com/user?access_token=' + dict_["access_token"])
@@ -179,7 +179,7 @@ def register(api, name_space):
                         usr = users["hits"]["hits"][0]
 
                 logger.info("USR_" * 20)
-                logger.info(usr)
+                logger.info((usr or {}).get("_source", {}).get("login", "unknown"))
 
                 if usr is None:
                     return jsonify({'error': "Bad Credentials"})
@@ -279,7 +279,7 @@ def register(api, name_space):
                         usr = users["hits"]["hits"][0]
 
                 logger.info("USR_" * 20)
-                logger.info(usr)
+                logger.info((usr or {}).get("_source", {}).get("login", "unknown"))
 
                 if usr is not None and pbkdf2_sha256.verify(
                         data["password"], usr["_source"]["password"]):
@@ -290,9 +290,7 @@ def register(api, name_space):
                             codeindb = state.redisserver.get("nyx_double_" + data["login"])
                             if codeindb is not None:
                                 codeindb = codeindb.decode("ascii")
-                            logger.info("In redis:")
-                            logger.info(codeindb)
-                            logger.info(data["doublecode"])
+                            logger.info("In redis: <redacted>, submitted: <redacted>")
                             if str(codeindb) != data["doublecode"]:
                                 state.redisserver.delete("nyx_double_" + data["login"])
                                 return jsonify({'error': "ErrorDoublePhase"})
@@ -343,7 +341,7 @@ def register(api, name_space):
                                 if ad_info.get("mail") else "",
                             }
                         }
-                        logger.info(usr)
+                        logger.info("AD user authenticated: " + cleanlogin)
                         return finalize_login(usr, data, state.es, state.conn)
                     else:
                         logger.info(f"Authentication failed for user {cleanlogin}")
@@ -429,8 +427,8 @@ def register(api, name_space):
         def post(self, user=None):
             logger.info(">>> Change password")
             req = json.loads(request.data.decode("utf-8"))
-            logger.info(req)
-            logger.info(user)
+            logger.info("Change password request fields: " + ",".join(req.keys()))
+            logger.info("Change password for user: " + str(user.get("id", "")))
             if state.elkversion >= 7:
                 usrdb = state.es.get(index="nyx_user", id=user["id"])
             else:

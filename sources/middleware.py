@@ -3,6 +3,7 @@ Authentication middleware: token_required, check_post_parameters decorators,
 auth helper functions, and DateTimeEncoder.
 """
 
+import hashlib
 import json
 import logging
 from functools import wraps
@@ -14,6 +15,14 @@ from cachetools import cached, TTLCache
 import state
 
 logger = logging.getLogger()
+
+
+def fingerprint(secret):
+    """Short, non-reversible identifier for a secret. Lets a token be
+    correlated across log lines without ever writing the secret itself."""
+    if not secret:
+        return "<none>"
+    return hashlib.sha256(str(secret).encode("utf-8")).hexdigest()[:12]
 
 
 class DateTimeEncoder(json.JSONEncoder):
@@ -49,7 +58,6 @@ def checkAPIKey(request):
         if token in state.tokens:
             return True
         redusr = state.redisserver.get("nyx_tok_" + token)
-        logger.info("nyx_fulltok_" + token)
         if redusr is not None:
             return True
 
@@ -62,15 +70,14 @@ def getUserFromToken(request):
         if token in state.tokens:
             return state.tokens[token]
         redusr = state.redisserver.get("nyx_tok_" + token)
-        logger.info("nyx_fulltok_" + token)
         if redusr is not None:
-            logger.info("Retrieved user " + token + " from redis.")
+            logger.info("Retrieved user for token " + fingerprint(token) + " from redis.")
             redusrobj = json.loads(redusr)
             state.tokens[token] = redusrobj
             logger.info("Token reinitialized from redis cluster.")
             return redusrobj
 
-    logger.info("Invalid Token:" + token)
+    logger.info("Invalid Token:" + fingerprint(token))
     return None
 
 

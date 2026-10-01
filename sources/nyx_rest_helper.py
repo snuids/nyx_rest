@@ -63,8 +63,10 @@ def get_postgres_connection():
                                     port = settings.PG_PORT,
                                     database = settings.PG_DATABASE)
         cursor = pg_connection.cursor()
-        # Print PostgreSQL Connection properties
-        logger.info ( pg_connection.get_dsn_parameters())
+        # Print PostgreSQL Connection properties (never the password)
+        dsn_params = pg_connection.get_dsn_parameters()
+        dsn_params.pop("password", None)
+        logger.info(dsn_params)
         # Print PostgreSQL version
         cursor.execute("SELECT version();")
         record = cursor.fetchone()
@@ -125,7 +127,7 @@ def sendMail(task,mes):
     zip_filename = None
     
     try:
-        logger.info("Sending mail:<"+SMTP_ADDRESS+"> <"+SMTP_USER+"> <"+len(SMTP_PASSWORD)*"*"+"> Port<"+str(SMTP_PORT)+">")
+        logger.info("Sending mail:<"+SMTP_ADDRESS+"> <"+SMTP_USER+"> <hidden> Port<"+str(SMTP_PORT)+">")
         logger.info("Recipient: "+mes["user"]["id"])
         
         if settings.SMTP_SSL:
@@ -270,7 +272,7 @@ SMTP_PORT=settings.SMTP_PORT
 server={"ip":settings.AMQC_URL,"port":settings.AMQC_PORT
                 ,"login":settings.AMQC_LOGIN,"password":settings.AMQC_PASSWORD
                 ,"heartbeats":(120000,120000),"earlyack":True}
-logger.info(server)                
+logger.info("AMQC server %s:%s (login=%s)" %(settings.AMQC_URL, settings.AMQC_PORT, settings.AMQC_LOGIN))
 conn=amqstompclient.AMQClient(server
     , {"name":MODULE,"version":VERSION,"lifesign":"/topic/NYX_MODULE_INFO"},QUEUE,callback=messageReceived)
 #conn,listener= amqHelper.init_amq_connection(activemq_address, activemq_port, activemq_user,activemq_password, "RestAPI",VERSION,messageReceived)

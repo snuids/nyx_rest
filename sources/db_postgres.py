@@ -55,7 +55,9 @@ def get_postgres_connection():
                 raise Exception("PostgreSQL connection timed out after 6 seconds")
 
         cursor = state.pg_connection.cursor()
-        logger.info(state.pg_connection.get_dsn_parameters())
+        dsn_params = state.pg_connection.get_dsn_parameters()
+        dsn_params.pop("password", None)
+        logger.info(dsn_params)
         cursor.execute("SELECT version();")
         record = cursor.fetchone()
         logger.info("Connected to - %s" % (record,))
