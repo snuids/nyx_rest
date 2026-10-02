@@ -87,7 +87,7 @@ def pushHistoryToELK(request, timespan, usr, token, error):
         "method": request.method,
         "timespan": timespan,
         "user": usr["login"] if usr else "",
-        "token": token,
+        "token": fingerprint(token),
         "error": error,
         "@timestamp": int(datetime.now().timestamp()) * 1000,
     }

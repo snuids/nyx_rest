@@ -4,7 +4,7 @@
 ![badge](https://img.shields.io/github/languages/code-size/snuids/nyx_rest)
 ![badge](https://img.shields.io/github/last-commit/snuids/nyx_rest)
 
-NYX Rest API (version 3.21.12).
+NYX Rest API (version 3.21.13).
 
 File listing, downloads, uploads, and ZIPs stay within the selected file-system
 app's root and require the app's privileges. For `rec_id=-1`, paths may be
