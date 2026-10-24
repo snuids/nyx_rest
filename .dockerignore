@@ -1,0 +1,26 @@
+# Git metadata
+.git
+.github
+
+# Editor / agent files
+.vscode
+**/.vscode
+AGENTS.md
+
+# Python caches
+**/__pycache__
+**/*.pyc
+**/*.pyo
+
+# Local secrets and run scripts; production supplies these as env vars
+sources/.env
+sources/startrest*.sh
+
+# Local virtualenv and runtime artifacts
+sources/venv
+sources/logs
+sources/outputs
+
+# Not needed at runtime
+tests
+**/.DS_Store
