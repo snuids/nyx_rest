@@ -8,26 +8,32 @@ on:
       - '**.md'
 
 jobs:
-  build:
+  prepare:
     runs-on: ubuntu-latest
-    if: contains(github.event.head_commit.message, 'v')
-
+    outputs:
+      version: ${{ steps.extract_version.outputs.version }}
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
       - name: Extract version from commit message
         id: extract_version
         env:
           COMMIT_MSG: ${{ github.event.head_commit.message }}
         run: |
           VERSION=$(printf '%s\n' "$COMMIT_MSG" | grep -oE 'v[0-9]+\.[0-9]+\.[0-9]+' | head -n1 | sed 's/^v//')
-          if [ -z "$VERSION" ]; then
-            echo "ERROR: No version found in commit message. Expected format: vX.Y.Z"
-            exit 1
-          fi
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
-          echo "Extracted version: $VERSION"
+          if [ -n "$VERSION" ]; then
+            echo "Extracted version: v$VERSION"
+          else
+            echo "No version tag found; the build will be skipped."
+          fi
+
+  build:
+    needs: prepare
+    if: needs.prepare.outputs.version != ''
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
@@ -48,9 +54,9 @@ jobs:
           file: ./Dockerfile7
           platforms: linux/amd64,linux/arm64
           push: true
-          tags: snuids/nyx_rest:v${{ steps.extract_version.outputs.version }}
+          tags: snuids/nyx_rest:v${{ needs.prepare.outputs.version }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
       - name: Image digest
-        run: echo "Image pushed successfully with version v${{ steps.extract_version.outputs.version }}"
+        run: echo "Image pushed successfully with version v${{ needs.prepare.outputs.version }}"
