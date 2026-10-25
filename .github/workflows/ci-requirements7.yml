@@ -47,12 +47,7 @@ jobs:
       - name: Show key versions
         run: |
           docker run --rm -i nyx_rest:ci python - <<'PY'
-          import flask, werkzeug, numpy, pandas, requests, urllib3, certifi
-          print("Flask", flask.__version__)
-          print("Werkzeug", werkzeug.__version__)
-          print("numpy", numpy.__version__)
-          print("pandas", pandas.__version__)
-          print("requests", requests.__version__)
-          print("urllib3", urllib3.__version__)
-          print("certifi", certifi.__version__)
+          from importlib.metadata import version
+          for package in ["flask", "werkzeug", "numpy", "pandas", "requests", "urllib3", "certifi"]:
+              print(package, version(package))
           PY
