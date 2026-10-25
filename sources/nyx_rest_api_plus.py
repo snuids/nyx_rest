@@ -56,6 +56,7 @@ v3.21.10 01/Oct/2026  Restore legacy /logs paths in listdir and file downloads
 v3.21.11 02/Oct/2026  Security: upgrade Flask/Werkzeug/requests/urllib3/cryptography dependencies
 v3.21.12 02/Oct/2026  Update gunicorn, redis, cachetools, stomp.py and socketio dependencies
 v3.21.13 02/Oct/2026  Security: update urllib3/cryptography/pyasn1/requests and stop storing raw tokens in history
+v3.21.18 25/Oct/2026  Retire the legacy Dockerfile/requirements path, add requirements7 CI, and report the correct version
 """
 
 import os
