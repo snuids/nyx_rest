@@ -1,0 +1,58 @@
+name: CI - Requirements7
+
+on:
+  pull_request:
+    paths:
+      - 'Dockerfile7'
+      - 'sources/requirements7.txt'
+      - 'sources/**'
+      - '.github/workflows/ci-requirements7.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: requirements7-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-and-check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build Dockerfile7
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./Dockerfile7
+          load: true
+          push: false
+          tags: nyx_rest:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Check Python dependencies
+        run: docker run --rm nyx_rest:ci pip check
+
+      - name: Compile Python sources
+        run: docker run --rm nyx_rest:ci python -m compileall -q /opt/sources
+
+      - name: Show key versions
+        run: |
+          docker run --rm -i nyx_rest:ci python - <<'PY'
+          import flask, werkzeug, numpy, pandas, requests, urllib3, certifi
+          print("Flask", flask.__version__)
+          print("Werkzeug", werkzeug.__version__)
+          print("numpy", numpy.__version__)
+          print("pandas", pandas.__version__)
+          print("requests", requests.__version__)
+          print("urllib3", urllib3.__version__)
+          print("certifi", certifi.__version__)
+          PY
