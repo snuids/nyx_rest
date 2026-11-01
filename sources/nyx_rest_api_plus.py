@@ -57,6 +57,7 @@ v3.21.11 02/Oct/2026  Security: upgrade Flask/Werkzeug/requests/urllib3/cryptogr
 v3.21.12 02/Oct/2026  Update gunicorn, redis, cachetools, stomp.py and socketio dependencies
 v3.21.13 02/Oct/2026  Security: update urllib3/cryptography/pyasn1/requests and stop storing raw tokens in history
 v3.21.18 25/Oct/2026  Retire the legacy Dockerfile/requirements path, add requirements7 CI, and report the correct version
+v3.22.0 01/Nov/2026  Configuration bundle: export the platform design and plan/apply its import
 """
 
 import os
@@ -158,11 +159,13 @@ from routes.misc import register as register_misc
 from routes.auth import register as register_auth
 from routes.files import register as register_files
 from routes.data import register as register_data
+from routes.configio import register as register_configio
 
 register_misc(app, api, name_space)
 register_auth(api, name_space)
 register_files(app, api, name_space)
 register_data(app, api, name_space)
+register_configio(app, api, name_space)
 
 # ---------------------------------------------------------------------------
 # AMQC message handler
