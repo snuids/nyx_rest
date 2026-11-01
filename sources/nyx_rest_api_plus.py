@@ -61,6 +61,7 @@ v3.22.0 01/Nov/2026  Configuration bundle: export the platform design and plan/a
 v3.22.1 01/Nov/2026  Authorization: Bearer *** on every route; /healthz and /metrics added
 v3.22.2 01/Nov/2026  Log rollover is serialised between gunicorn workers (no more lost archives)
 v3.22.3 01/Nov/2026  Metrics carry the worker pid, so rate() stops reading the counter as resetting
+v3.22.8 01/Nov/2026  /config exposes the data-controller mentions, so the privacy notice is edited without a rebuild
 v3.22.7 01/Nov/2026  Auth failures go to a dated index, so the curator can expire them after 7 days
 v3.22.6 01/Nov/2026  A missing document is no longer an API error, and users are found by login when their _id differs
 v3.22.5 01/Nov/2026  Auth failures are actually traced (the ES client is opensearchpy, which wants body=)
@@ -93,6 +94,9 @@ import state
 state.COOKIESECURE = True
 state.WELCOME = settings.WELCOMEMESSAGE
 state.ICON = settings.ICON
+state.PRIVACY_CONTROLLER = settings.PRIVACY_CONTROLLER
+state.PRIVACY_ADDRESS = settings.PRIVACY_ADDRESS
+state.PRIVACY_CONTACT = settings.PRIVACY_CONTACT
 state.OUTPUT_FOLDER = settings.OUTPUT_FOLDER
 state.OUTPUT_URL = settings.OUTPUT_URL
 
