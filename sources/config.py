@@ -15,6 +15,13 @@ class Settings(BaseSettings):
     WELCOMEMESSAGE: str = ""
     ICON: str = ""
 
+    # Mentions légales de la notice de protection des données. Vides, elles affichent
+    # « à compléter » ; renseignées, elles remplacent le texte dans les trois langues sans
+    # reconstruire l'image — il suffit de redémarrer l'API.
+    PRIVACY_CONTROLLER: str = ""
+    PRIVACY_ADDRESS: str = ""
+    PRIVACY_CONTACT: str = ""
+
     # Feature flags
     USE_LOGSTASH: bool = False
     COOKIESECURE: bool = True

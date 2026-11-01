@@ -113,6 +113,13 @@ def register(app, api, name_space):
                 'welcome': state.WELCOME,
                 'icon': state.ICON,
                 'elastic_version': state.elkversion,
+                # Mentions légales : la notice les affiche si elles sont renseignées,
+                # sinon elle garde son texte « à compléter ».
+                'privacy': {
+                    'controller': state.PRIVACY_CONTROLLER,
+                    'address': state.PRIVACY_ADDRESS,
+                    'contact': state.PRIVACY_CONTACT,
+                },
             }
 
     # -----------------------------------------------------------------------
