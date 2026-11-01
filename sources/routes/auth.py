@@ -46,10 +46,11 @@ def record_auth_failure(login, ip, reason, user_agent=""):
             "reason": reason,
             "user_agent": (user_agent or "")[:300],
         }
-        if state.elkversion >= 7:
-            state.es.index(index="nyx_authfail", document=doc)
-        else:
-            state.es.index(index="nyx_authfail", doc_type="doc", body=doc)
+        try:
+            state.es.index(index="nyx_authfail", document=doc)        # elasticsearch-py 8
+        except TypeError:
+            # le client réellement installé est opensearchpy, qui attend body=
+            state.es.index(index="nyx_authfail", body=doc)
     except Exception:
         logger.warning("échec d'authentification non tracé", exc_info=True)
 
