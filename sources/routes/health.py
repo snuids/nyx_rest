@@ -124,6 +124,11 @@ def render_metrics():
     _metric(lines, "nyx_requests_total", state.requests_total, "Authenticated calls served by this worker", "counter", labels=worker)
     _metric(lines, "nyx_errors_total", state.errors_total, "Calls answered with an error", "counter", labels=worker)
     _metric(lines, "nyx_active_tokens", len(state.tokens), "Tokens currently cached by this worker", labels=worker)
+    # Deux compteurs distincts : un mot de passe faux (tentative légitime ou attaque) et une
+    # tentative écartée par le garde (attaque en cours). Les confondre rendrait les deux
+    # signaux illisibles.
+    _metric(lines, "nyx_auth_failures_total", state.auth_failures_total, "Rejected credentials", "counter", labels=worker)
+    _metric(lines, "nyx_auth_blocked_total", state.auth_blocked_total, "Login attempts refused by the brute-force guard", "counter", labels=worker)
 
     return "\n".join(lines) + "\n"
 
