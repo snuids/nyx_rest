@@ -27,8 +27,31 @@ from common import loadData
 from auth.auth_ad import authenticate_ad
 from auth.double_phase import verify_double_code
 from auth.role_mapper import extract_roles_from_ad
+import login_guard as guard
 
 logger = logging.getLogger()
+
+
+def record_auth_failure(login, ip, reason, user_agent=""):
+    """Trace un échec d'authentification dans ``nyx_authfail``.
+
+    Sans cette trace, une attaque par force brute est invisible : l'appel n'a pas encore de
+    token, donc il n'apparaît ni dans ``nyx_apicalls`` ni dans les métriques applicatives.
+    """
+    try:
+        doc = {
+            "@timestamp": datetime.utcnow().isoformat() + "Z",
+            "login": login,
+            "ip": ip,
+            "reason": reason,
+            "user_agent": (user_agent or "")[:300],
+        }
+        if state.elkversion >= 7:
+            state.es.index(index="nyx_authfail", document=doc)
+        else:
+            state.es.index(index="nyx_authfail", doc_type="doc", body=doc)
+    except Exception:
+        logger.warning("échec d'authentification non tracé", exc_info=True)
 
 
 def setACookie(privilege, privileges, resp, token):
@@ -252,6 +275,19 @@ def register(api, name_space):
             if ("login" in data) and ("password" in data):
                 cleanlogin = data["login"].split(">")[0]
 
+                # Force brute : compteurs Redis (compte + IP) consultés avant toute
+                # vérification de mot de passe, pour qu'un refus coûte une requête et non
+                # un calcul pbkdf2 — et qu'un attaquant ne puisse pas saturer les workers.
+                ip = guard.client_ip(request.headers, request.remote_addr)
+                wait = guard.retry_after(state.redisserver, cleanlogin, ip)
+                if wait > 0:
+                    state.auth_blocked_total += 1
+                    record_auth_failure(cleanlogin, ip, "LOCKED", request.headers.get("User-Agent"))
+                    resp = jsonify({"error": "TOO_MANY_ATTEMPTS", "retry_after": int(wait)})
+                    resp.status_code = 429
+                    resp.headers["Retry-After"] = str(int(wait))
+                    return resp
+
                 try:
                     if state.elkversion >= 7:
                         usr = state.es.get(index="nyx_user", id=cleanlogin)
@@ -287,12 +323,21 @@ def register(api, name_space):
                 if usr is not None and pbkdf2_sha256.verify(
                         data["password"], usr["_source"]["password"]):
 
+                    guard.reset(state.redisserver, cleanlogin, ip)
+
                     if usr["_source"].get("doublePhase", False) is True:
                         if "doublecode" in data:
                             logger.info("Must check code")
                             if not verify_double_code(
                                 state.redisserver, data["login"], data["doublecode"]
                             ):
+                                # Un code à cinq chiffres se devine : l'erreur de second
+                                # facteur compte comme un échec, pas comme un incident.
+                                guard.register_failure(state.redisserver, cleanlogin, ip)
+                                state.auth_failures_total += 1
+                                record_auth_failure(cleanlogin, ip, "DOUBLE_PHASE",
+                                                    request.headers.get("User-Agent"))
+                                guard.delay()
                                 return jsonify({'error': "ErrorDoublePhase"})
                         else:
                             randint = "" + str(random.randint(10000, 99999))
@@ -344,7 +389,14 @@ def register(api, name_space):
                         return finalize_login(usr, data, state.es, state.conn)
                     else:
                         logger.info(f"Authentication failed for user {cleanlogin}")
-                        return jsonify({'error': "Bad Credentials"})
+                        guard.register_failure(state.redisserver, cleanlogin, ip)
+                        state.auth_failures_total += 1
+                        record_auth_failure(cleanlogin, ip, "BAD_CREDENTIALS",
+                                            request.headers.get("User-Agent"))
+                        # Le plancher de temps rend indiscernables « compte inconnu » et
+                        # « mot de passe faux », quel que soit le chemin pris (local ou AD).
+                        guard.delay()
+                        return jsonify({'error': guard.failure_message()})
 
             return jsonify({'error': "Bad Request"})
 
