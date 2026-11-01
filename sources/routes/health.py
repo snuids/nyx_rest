@@ -10,6 +10,7 @@ status word, and counters. No hostname, no credential, no user.
 
 import json
 import logging
+import os
 
 from flask import Response
 from flask_restx import Resource
@@ -113,9 +114,16 @@ def render_metrics():
             broker_detail["lastLifeSignSeconds"],
             "Age of the last life sign published on the broker",
         )
-    _metric(lines, "nyx_requests_total", state.requests_total, "Authenticated calls served by this worker", "counter")
-    _metric(lines, "nyx_errors_total", state.errors_total, "Calls answered with an error", "counter")
-    _metric(lines, "nyx_active_tokens", len(state.tokens), "Tokens currently cached by this worker")
+    # Les compteurs vivent dans le processus : trois workers gunicorn, donc trois valeurs
+    # différentes. Sans label, chaque scrape tombe sur un worker au hasard et la série fait
+    # des dents de scie (34, 28, 31, 39…) que Prometheus interprète comme des remises à zéro :
+    # rate() et increase() renvoient n'importe quoi — c'est ce qui a fait sonner l'alerte de
+    # taux d'erreur à 6 % pour zéro erreur réelle le 01/11. Le label worker rend chaque série
+    # monotone, et sum(rate(...)) au niveau de la règle redevient juste.
+    worker = {"worker": str(os.getpid())}
+    _metric(lines, "nyx_requests_total", state.requests_total, "Authenticated calls served by this worker", "counter", labels=worker)
+    _metric(lines, "nyx_errors_total", state.errors_total, "Calls answered with an error", "counter", labels=worker)
+    _metric(lines, "nyx_active_tokens", len(state.tokens), "Tokens currently cached by this worker", labels=worker)
 
     return "\n".join(lines) + "\n"
 

@@ -219,11 +219,18 @@ class RouteTests(unittest.TestCase):
             "nyx_elasticsearch_up 1",
             "nyx_redis_up 1",
             "nyx_broker_up 1",
-            "nyx_requests_total 12",
-            "nyx_errors_total 3",
         ):
             self.assertIn(expected, body)
         self.assertIn("# TYPE nyx_requests_total counter", body)
+
+    def test_metrics_labels_the_counters_with_the_worker_pid(self):
+        """Trois workers gunicorn, trois compteurs : sans le label, la série fait des dents de scie."""
+        state.requests_total = 12
+        state.errors_total = 3
+        body = self.client.get("/api/v1/metrics").get_data(as_text=True)
+        self.assertRegex(body, r'nyx_requests_total\{worker="\d+"\} 12')
+        self.assertRegex(body, r'nyx_errors_total\{worker="\d+"\} 3')
+        self.assertRegex(body, r'nyx_active_tokens\{worker="\d+"\}')
 
     def test_metrics_reports_a_down_dependency(self):
         state.es = FakeES(up=False)

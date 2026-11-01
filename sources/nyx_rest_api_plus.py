@@ -60,6 +60,7 @@ v3.21.18 25/Oct/2026  Retire the legacy Dockerfile/requirements path, add requir
 v3.22.0 01/Nov/2026  Configuration bundle: export the platform design and plan/apply its import
 v3.22.1 01/Nov/2026  Authorization: Bearer *** on every route; /healthz and /metrics added
 v3.22.2 01/Nov/2026  Log rollover is serialised between gunicorn workers (no more lost archives)
+v3.22.3 01/Nov/2026  Metrics carry the worker pid, so rate() stops reading the counter as resetting
 """
 
 import os
