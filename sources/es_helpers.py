@@ -187,6 +187,7 @@ def handleAPICalls():
             if state.conn is not None:
                 logger.debug("Sending Life Sign")
                 state.conn.send_life_sign()
+                state.last_lifesign = datetime.now()
                 logger.debug("Sleeping")
         except Exception as e:
             logger.error("Unable to send life sign or api history.")

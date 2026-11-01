@@ -17,6 +17,24 @@ import state
 logger = logging.getLogger()
 
 
+BEARER_PREFIX = "bearer "
+
+# Routes that may still receive the token as a query parameter: the console and the mobile app
+# were built that way. The header is preferred, and the query form is what the logs of an
+# operator reveal when a client has not been migrated.
+def request_token(request):
+    """Return ``(token, source)`` for the request, source being "header", "query" or None."""
+    header = request.headers.get("Authorization", "")
+    if header.lower().startswith(BEARER_PREFIX):
+        token = header[len(BEARER_PREFIX):].strip()
+        if token:
+            return token, "header"
+    token = request.args.get("token")
+    if token:
+        return token, "query"
+    return None, None
+
+
 def fingerprint(secret):
     """Short, non-reversible identifier for a secret. Lets a token be
     correlated across log lines without ever writing the secret itself."""
@@ -64,8 +82,11 @@ def checkAPIKey(request):
     return False
 
 
-def getUserFromToken(request):
-    token = request.args.get('token')
+def getUserFromToken(request, token=None):
+    if token is None:
+        token, _ = request_token(request)
+    if token is None:
+        return None
     with state.tokenlock:
         if token in state.tokens:
             return state.tokens[token]
@@ -129,10 +150,16 @@ def token_required(*roles):
             starttime = int(datetime.now().timestamp() * 1000)
             ret = None
             usr = None
-            if "token" not in request.args:
+            token, source = request_token(request)
+            if token is None:
                 ret = {'error': "NO_TOKEN"}
             else:
-                usr = getUserFromToken(request)
+                if source == "query":
+                    logger.debug(
+                        "Token passed as a query parameter on %s; an Authorization: Bearer header "
+                        "is preferred.", request.path
+                    )
+                usr = getUserFromToken(request, token)
                 if usr is None:
                     ret = {'error': "UNKNOWN_TOKEN"}
                 else:
@@ -160,8 +187,12 @@ def token_required(*roles):
             if type(ret) == dict:
                 error = ret["error"]
 
-            if "token" in request.args:
-                pushHistoryToELK(request, timespan, usr, request.args["token"], error)
+            state.requests_total += 1
+            if error:
+                state.errors_total += 1
+
+            if token is not None:
+                pushHistoryToELK(request, timespan, usr, token, error)
 
             if type(ret) != dict:
                 return ret

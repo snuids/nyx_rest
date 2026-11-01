@@ -20,7 +20,7 @@ from flask_restx import Resource, fields
 
 import state
 from config import settings
-from middleware import token_required, check_post_parameters
+from middleware import token_required, check_post_parameters, request_token
 from helpers.disk_helper import (
     list_dir, get_all_file_paths, is_path_within_roots, resolve_under_root,
     normalize_log_path,
@@ -272,7 +272,7 @@ def register(app, api, name_space):
         @token_required()
         def get(self, user=None):
             logger.info(user)
-            token = request.args["token"]
+            token, _ = request_token(request)
             from kibana_helpers import computeMenus
             finalcategory = computeMenus({"_source": user}, token, "console")
             return {
@@ -324,12 +324,13 @@ def register(app, api, name_space):
                 logger.info(file)
                 logger.info(user)
                 data = file.read()
+                token, _ = request_token(request)
                 state.conn.send_message(
                     queue,
                     base64.b64encode(data),
                     {
                         "file": file.filename,
-                        "token": request.args.get('token'),
+                        "token": token,
                         "user": json.dumps(user),
                         "upload_headers": request.headers.environ.get('HTTP_UPLOAD_HEADERS'),
                     },

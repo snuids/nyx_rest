@@ -10,7 +10,7 @@ import threading
 from datetime import datetime, timedelta
 
 # Application metadata
-VERSION = "3.22.0"
+VERSION = "3.22.1"
 MODULE = "nyx_rest_" + str(os.getpid())
 
 # Config-derived constants (set during startup in nyx_rest_api_plus.py)
@@ -45,6 +45,11 @@ last_indices_refresh = datetime.now() - timedelta(minutes=10)
 translations = {}
 last_translation_refresh_seconds = 60
 last_translation_refresh = datetime.now() - timedelta(minutes=10)
+
+# Runtime counters, exposed by /api/v1/metrics (reset when the worker restarts)
+requests_total = 0
+errors_total = 0
+last_lifesign = None
 
 # Auth tokens
 tokens = cachetools.TTLCache(maxsize=1000, ttl=5 * 60)

@@ -16,7 +16,9 @@ from flask_restx import Resource, fields
 
 import state
 from config import settings
-from middleware import token_required, check_post_parameters, DateTimeEncoder, fingerprint
+from middleware import (
+    token_required, check_post_parameters, DateTimeEncoder, fingerprint, request_token
+)
 from db_postgres import get_postgres_connection
 from es_helpers import can_use_indice
 from common import loadData, get_mappings, kibanaData
@@ -284,7 +286,9 @@ def register(app, api, name_space):
         logger.info("Kibana Load")
         outputformat = request.args.get("output", "csv")
         logger.info("Output:" + outputformat)
-        token = request.args.get('token')
+        token, _ = request_token(request)
+        if token is None:
+            return {"error": "NO_TOKEN"}
         logger.info("Kibana msearch key for token " + fingerprint(token))
         matchrequest = state.redisserver.get("nyx_kib_msearch" + token).decode('utf-8')
         logger.info(matchrequest)

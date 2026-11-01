@@ -92,6 +92,34 @@ directories, set `STREAM_ALLOWED_ROOTS` to a comma-separated list of allowed roo
 users with access to the app. Requests still require a valid token and the corresponding
 privileges.
 
+## Authentication
+
+Two ways to present the token, checked in this order:
+
+```shell
+curl -sk -H "Authorization: Bearer $TOKEN" https://host/api/v1/status   # preferred
+curl -sk "https://host/api/v1/status?token=$TOKEN"                      # still accepted
+```
+
+The query parameter is the historical form: it ends up in nginx access logs, browser history and
+`Referer` headers. It keeps working because the console and the mobile app were built that way;
+enable the API log at `DEBUG` to see which routes still receive it (`Token passed as a query
+parameter on …`).
+
+## Probes and metrics
+
+| Endpoint | Token | Answer |
+| --- | --- | --- |
+| `GET /api/v1/healthz` | none | `{status, version, elasticVersion, checks{elasticsearch,redis,broker}, time}`, **503** when a dependency is down |
+| `GET /api/v1/metrics` | none | Prometheus text: `nyx_up`, `nyx_info`, `nyx_elasticsearch_up`, `nyx_redis_up`, `nyx_broker_up`, `nyx_broker_life_sign_age_seconds`, `nyx_requests_total`, `nyx_errors_total`, `nyx_active_tokens` |
+
+`/api/v1/status` requires a token, so it cannot be a liveness probe: use `/healthz`. The broker
+is considered up while its life sign is younger than 30 s (the API publishes one every 5 s), which
+catches a worker that is running but has lost its STOMP connection.
+
+The counters are per worker: gunicorn runs three of them, so a Prometheus scrape of the service
+sees whichever one answers. Sum them (`sum by (instance)`) or scrape each worker by name.
+
 ## Tests
 
 ```shell

@@ -19,7 +19,9 @@ from datetime import datetime, timedelta
 
 import state
 from config import settings
-from middleware import token_required, check_post_parameters, pushHistoryToELK, fingerprint
+from middleware import (
+    token_required, check_post_parameters, pushHistoryToELK, fingerprint, request_token
+)
 from kibana_helpers import computeMenus
 from common import loadData
 from auth.auth_ad import authenticate_ad
@@ -352,7 +354,7 @@ def register(api, name_space):
         @api.doc(description="Log the user out.", params={'token': 'A valid token'})
         def get(self, user=None):
             logger.info(">>> Logout")
-            token = request.args.get('token')
+            token, _ = request_token(request)
             state.redisserver.delete("nyx_tok_" + str(token))
             state.redisserver.delete("nyx_nodered_" + str(token))
             state.redisserver.delete("nyx_cerebro_" + str(token))
