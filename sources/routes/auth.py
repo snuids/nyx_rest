@@ -46,11 +46,15 @@ def record_auth_failure(login, ip, reason, user_agent=""):
             "reason": reason,
             "user_agent": (user_agent or "")[:300],
         }
+        # Index daté, comme nyx_apicalls : le curator expirera au-delà de sept jours. Un
+        # login tenté, une IP et un User-Agent sont des données personnelles ; elles ne
+        # doivent pas survivre indéfiniment dans un index unique qui ne cesse de grossir.
+        index = "nyx_authfail-" + datetime.utcnow().strftime("%Y.%m.%d")
         try:
-            state.es.index(index="nyx_authfail", document=doc)        # elasticsearch-py 8
+            state.es.index(index=index, document=doc)        # elasticsearch-py 8
         except TypeError:
             # le client réellement installé est opensearchpy, qui attend body=
-            state.es.index(index="nyx_authfail", body=doc)
+            state.es.index(index=index, body=doc)
     except Exception:
         logger.warning("échec d'authentification non tracé", exc_info=True)
 
