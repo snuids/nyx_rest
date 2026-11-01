@@ -21,11 +21,16 @@ from middleware import (
 )
 from db_postgres import get_postgres_connection
 from es_helpers import can_use_indice
+from es_read import fetch_document, find_user_by_login
 from common import loadData, get_mappings, kibanaData
 from pg_common import loadPGData, getAppByID, get_sql_server_connection
 from helpers.sql_queries import build_crud_query
 
 logger = logging.getLogger()
+
+
+
+
 
 
 def register(app, api, name_space):
@@ -435,15 +440,9 @@ def register(app, api, name_space):
             return {'error': "Not Allowed", "records": [], "aggs": []}
 
         if met == 'get':
-            try:
-                if state.elkversion >= 7:
-                    ret = state.es.get(index=index, id=object)
-                else:
-                    ret = state.es.get(index=index, id=object,
-                                       doc_type=request.args.get("doc_type", "doc"))
-            except:
-                return {'error': "unable to get data", "data": None}
-            return {'error': "", "data": ret}
+            error, ret = fetch_document(state.es, index, object, state.elkversion,
+                                        request.args.get("doc_type", "doc"))
+            return {'error': error, "data": ret}
 
         elif met == 'post':
             try:
