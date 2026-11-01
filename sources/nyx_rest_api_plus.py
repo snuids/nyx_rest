@@ -58,7 +58,8 @@ v3.21.12 02/Oct/2026  Update gunicorn, redis, cachetools, stomp.py and socketio 
 v3.21.13 02/Oct/2026  Security: update urllib3/cryptography/pyasn1/requests and stop storing raw tokens in history
 v3.21.18 25/Oct/2026  Retire the legacy Dockerfile/requirements path, add requirements7 CI, and report the correct version
 v3.22.0 01/Nov/2026  Configuration bundle: export the platform design and plan/apply its import
-v3.22.1 01/Nov/2026  Authorization: Bearer accepted on every route; /healthz and /metrics added
+v3.22.1 01/Nov/2026  Authorization: Bearer *** on every route; /healthz and /metrics added
+v3.22.2 01/Nov/2026  Log rollover is serialised between gunicorn workers (no more lost archives)
 """
 
 import os
@@ -66,7 +67,6 @@ import json
 import importlib
 import threading
 import logging
-from logging.handlers import TimedRotatingFileHandler
 
 import redis
 from flask import Flask, Blueprint, url_for
@@ -78,6 +78,7 @@ from opensearchpy import OpenSearch as ES
 
 from config import settings
 from common import getELKVersion
+from log_setup import MultiProcessTimedRotatingFileHandler
 import state
 
 # ---------------------------------------------------------------------------
@@ -109,7 +110,8 @@ if settings.USE_LOGSTASH:
     lshandler.setLevel(logging.ERROR)
     logger.addHandler(lshandler)
 
-handler = TimedRotatingFileHandler(
+# Three gunicorn workers share this file: the handler serialises the rollover, see log_setup.py.
+handler = MultiProcessTimedRotatingFileHandler(
     "logs/nyx_rest_api.log", when="d", interval=1, backupCount=30
 )
 logFormatter = logging.Formatter(
