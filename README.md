@@ -1,5 +1,8 @@
 # Nyx Rest API
 
+![Coverage](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/snuids/nyx_rest/badges/coverage.json&style=flat-square)
+![CI](https://img.shields.io/github/actions/workflow/status/snuids/nyx_rest/ci-requirements7.yml?style=flat-square&label=tests)
+
 ![badge](https://img.shields.io/badge/made%20with-python-blue.svg?style=flat-square)
 ![badge](https://img.shields.io/github/languages/code-size/snuids/nyx_rest)
 ![badge](https://img.shields.io/github/last-commit/snuids/nyx_rest)

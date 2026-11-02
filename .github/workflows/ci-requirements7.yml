@@ -6,11 +6,22 @@ on:
       - 'Dockerfile7'
       - 'sources/requirements7.txt'
       - 'sources/**'
+      - 'tests/**'
+      - '.github/workflows/ci-requirements7.yml'
+  # master too: a pull request is a promise, this is the proof. It also feeds the coverage badge.
+  push:
+    branches:
+      - master
+    paths:
+      - 'Dockerfile7'
+      - 'sources/requirements7.txt'
+      - 'sources/**'
+      - 'tests/**'
       - '.github/workflows/ci-requirements7.yml'
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
   group: requirements7-${{ github.ref }}
@@ -53,12 +64,39 @@ jobs:
       #   * a skipped test still exits 0 — the route tests skip themselves when a dependency
       #     is missing, so a missing import silently disabled a third of the suite;
       #   * nothing measured how much code the tests actually touched.
-      # So: fail on any skip, and gate on a coverage floor. 40 is the level reached on
-      # 2026-11-02 (43 % measured locally); raise it as tests land, never lower it.
+      # So: fail on any skip, and gate on a coverage floor, kept in scripts/ci_test.sh.
       - name: Run the test suite with coverage
         run: |
           docker run --rm -v "$PWD:/work" -w /work -e TZ=Europe/Paris \
             nyx_rest:ci sh /work/scripts/ci_test.sh
+
+      # The badge the README shows, refreshed by the run that measured it — a typed-in number
+      # would be wrong the next time a test lands. It lives on its own branch so that master's
+      # history stays exactly the merged pull requests, and so this push cannot start a build.
+      - name: Publish the coverage badge
+        if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -eu
+          total=$(cat .coverage-total)
+          case "$total" in
+            8[5-9]|9[0-9]|100) colour=brightgreen ;;
+            7[0-9]|8[0-4])     colour=yellowgreen ;;
+            5[0-9]|6[0-9])     colour=yellow ;;
+            *)                 colour=red ;;
+          esac
+          mkdir -p badge && cd badge
+          git init -q .
+          git checkout -q -b badges
+          printf '{"schemaVersion": 1, "label": "coverage", "message": "%s%%", "color": "%s"}\n' \
+            "$total" "$colour" > coverage.json
+          git add coverage.json
+          git -c user.name="github-actions[bot]" \
+              -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
+              commit -q -m "coverage: ${total}%"
+          git push -q --force \
+            "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" badges
 
       - name: Show key versions
         run: |

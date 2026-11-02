@@ -31,3 +31,7 @@ if [ "$status" -ne 0 ]; then
 fi
 
 python -m coverage report --fail-under="$FLOOR"
+
+# The percentage, alone, for the badge the README points at. Written where the workflow can
+# read it: the repository is mounted at /work.
+python -m coverage report --format=total > .coverage-total
