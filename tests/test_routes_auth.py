@@ -211,5 +211,116 @@ class LogoutTests(RouteTestCase):
         self.assertEqual(body["error"], "UNKNOWN_TOKEN")
 
 
+@unittest.skipUnless(auth_routes is not None, "routes.auth non importable")
+class ResetPasswordTests(RouteTestCase):
+    """An administrator resets a password: the result is provisional, never final."""
+
+    route_modules = (auth_routes, misc_routes)
+
+    def setUp(self):
+        super().setUp()
+        self.es.docs["nyx_user"] = users()
+        self.admin = self.login_as("bob@example.com", ["admin"])
+        self.plain = self.login_as("alice@example.com", ["YUL"])
+
+    def test_an_admin_can_reset_and_the_new_password_is_provisional(self):
+        code, body, _ = self.call("post", "/api/v1/cred/resetpassword", self.admin,
+                                  {"login": "alice@example.com", "new_password": "Provisoire#2026"})
+        self.assertEqual(body["error"], "")
+        stored = self.es.docs["nyx_user"]["alice@example.com"]
+        self.assertTrue(stored["mustResetPassword"],
+                        "a password set by an administrator must stay provisional")
+        self.assertTrue(pbkdf2_sha256.verify("Provisoire#2026", stored["password"]))
+
+    def test_a_plain_account_cannot_reset_another_one(self):
+        code, body, _ = self.call("post", "/api/v1/cred/resetpassword", self.plain,
+                                  {"login": "alice@example.com", "new_password": "Provisoire#2026"})
+        self.assertEqual(body["error"], "NO_PRIVILEGE")
+        self.assertEqual(self.es.written, [])
+
+    def test_resetting_an_unknown_account_says_so(self):
+        code, body, _ = self.call("post", "/api/v1/cred/resetpassword", self.admin,
+                                  {"login": "inconnu@example.com", "new_password": "Provisoire#2026"})
+        self.assertEqual(body["error"], "usernotfound")
+        self.assertEqual(self.es.written, [])
+
+    def test_the_optional_queue_receives_the_new_password(self):
+        self.call("post", "/api/v1/cred/resetpassword", self.admin,
+                  {"login": "alice@example.com", "new_password": "Provisoire#2026",
+                   "queue": "/topic/NOTIFY"})
+        sent = self.broker.sent_to("/topic/NOTIFY")
+        self.assertEqual(len(sent), 1)
+        self.assertEqual(json.loads(sent[0])["newpassword"], "Provisoire#2026")
+
+
+@unittest.skipUnless(auth_routes is not None, "routes.auth non importable")
+class DoublePhaseTests(RouteTestCase):
+    """Second factor by SMS: the code goes to the broker, never into the response."""
+
+    route_modules = (auth_routes, misc_routes)
+
+    def setUp(self):
+        super().setUp()
+        accounts = users()
+        accounts["alice@example.com"].update({"doublePhase": True, "phone": "+32470000000"})
+        self.es.docs["nyx_user"] = accounts
+
+    def _login(self, **extra):
+        payload = {"login": "alice@example.com", "password": PASSWORD}
+        payload.update(extra)
+        return self.call("post", "/api/v1/cred/login", body=payload)
+
+    def test_the_first_call_sends_a_code_instead_of_a_session(self):
+        code, body, _ = self._login()
+        self.assertEqual(body["error"], "DoublePhase")
+        sent = self.broker.sent_to("/topic/AUTH_SMS")
+        self.assertEqual(len(sent), 1)
+        message = json.loads(sent[0])
+        self.assertEqual(message["phone"], "+32470000000")
+        self.assertTrue(message["message"].startswith("Your access code is:"))
+        self.assertIn("nyx_double_alice@example.com", self.redis.store,
+                      "the code must be stored for the next call")
+
+    def test_a_wrong_code_counts_as_a_failed_attempt(self):
+        self._login()
+        code, body, _ = self._login(doublecode="00000")
+        self.assertEqual(body["error"], "ErrorDoublePhase")
+        self.assertEqual(self.state.auth_failures_total, 1)
+        self.assertEqual(int(self.redis.get("loginfail:user:alice@example.com")), 1)
+
+    def test_the_right_code_opens_the_session(self):
+        self._login()
+        stored = self.redis.get("nyx_double_alice@example.com")
+        good = stored.decode("ascii")
+        code, body, _ = self._login(doublecode=good)
+        self.assertEqual(body["error"], "")
+        self.assertTrue(body["cred"]["token"])
+
+
+@unittest.skipUnless(auth_routes is not None, "routes.auth non importable")
+class ImpersonationTests(RouteTestCase):
+    """`admin>user`: an administrator opens somebody else's session."""
+
+    route_modules = (auth_routes, misc_routes)
+
+    def setUp(self):
+        super().setUp()
+        self.es.docs["nyx_user"] = users()
+
+    def test_an_admin_can_open_another_account(self):
+        code, body, _ = self.call("post", "/api/v1/cred/login",
+                                  body={"login": "bob@example.com>alice@example.com",
+                                        "password": OTHER_PASSWORD})
+        self.assertEqual(body["error"], "")
+        self.assertEqual(body["cred"]["user"]["login"], "alice@example.com")
+        self.assertEqual(body["cred"]["user"]["privileges"], ["YUL"])
+
+    def test_an_unknown_target_is_refused(self):
+        code, body, _ = self.call("post", "/api/v1/cred/login",
+                                  body={"login": "bob@example.com>inconnu@example.com",
+                                        "password": OTHER_PASSWORD})
+        self.assertEqual(body["error"], "Unknown User")
+
+
 if __name__ == "__main__":
     unittest.main()
