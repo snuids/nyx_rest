@@ -19,6 +19,7 @@ from datetime import datetime, timedelta
 
 import state
 from config import settings
+from password_policy import check_new_password
 from middleware import (
     token_required, check_post_parameters, pushHistoryToELK, fingerprint, request_token
 )
@@ -449,6 +450,9 @@ def register(api, name_space):
                 return {"error": "usernotfound"}
 
             usrdb["_source"]["password"] = pbkdf2_sha256.hash(req["new_password"])
+            # Un mot de passe posé par un administrateur est provisoire : son titulaire doit
+            # en choisir un à sa première connexion.
+            usrdb["_source"]["mustResetPassword"] = True
             if state.elkversion >= 7:
                 state.es.index(index="nyx_user", body=usrdb["_source"], id=req["login"])
             else:
@@ -489,14 +493,29 @@ def register(api, name_space):
                 usrdb = state.es.get(index="nyx_user", id=user["id"])
             else:
                 usrdb = state.es.get(index="nyx_user", doc_type="doc", id=user["id"])
+            policy_error = check_new_password(req["new_password"], user.get("login", ""))
+            if policy_error:
+                return {"error": policy_error}
             if pbkdf2_sha256.verify(req["old_password"], usrdb["_source"]["password"]):
                 usrdb["_source"]["password"] = pbkdf2_sha256.hash(req["new_password"])
+                usrdb["_source"]["mustResetPassword"] = False
                 if state.elkversion >= 7:
                     res = state.es.index(index="nyx_user", body=usrdb["_source"], id=user["id"])
                 else:
                     res = state.es.index(index="nyx_user", body=usrdb["_source"],
                                          doc_type="doc", id=user["id"])
                 logger.info(res)
+                # Le jeton en cours cesse d'être bridé : on met à jour les deux copies
+                # (mémoire du worker et Redis), sinon l'utilisateur reste bloqué jusqu'à
+                # la reconnexion.
+                token, _ = request_token(request)
+                if token:
+                    with state.tokenlock:
+                        if token in state.tokens:
+                            state.tokens[token]["mustResetPassword"] = False
+                    payload = state.tokens.get(token)
+                    if payload is not None:
+                        state.redisserver.set("nyx_tok_" + str(token), json.dumps(payload), 3600 * 24)
                 return {"error": ""}
             else:
                 return {"error": "wrongpassword"}
