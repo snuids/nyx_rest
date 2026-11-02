@@ -1,4 +1,4 @@
-"""Agrégation des compteurs entre workers : fonctions pures, testées sans Redis."""
+"""Aggregation of the counters between workers: pure functions, tested without Redis."""
 
 import json
 import sys
@@ -20,7 +20,7 @@ class AggregateTest(unittest.TestCase):
         self.assertEqual(totals["workers"], 3)
 
     def test_a_silent_worker_drops_out_of_the_total(self):
-        """Un worker redéployé ne doit pas figer ses derniers chiffres dans la somme."""
+        """A redeployed worker must not freeze its last figures in the sum."""
         now = 1000
         entries = [
             ("7", json.dumps({"at": now, "requests_total": 10})),

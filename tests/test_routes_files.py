@@ -1,9 +1,9 @@
-"""Routes de fichiers : le confinement des chemins, vu depuis la route.
+"""File routes: path confinement, seen from the route.
 
-`helpers/disk_helper.py` a ses propres tests (85 %). Ce qui manquait, c'est le câblage : est-ce
-que `listdir` et `streamfile` appliquent bien ces gardes avant de toucher au disque, avec le
-`rec_id` et le `path` que l'interface envoie vraiment. Les applications n'existent pas sur le
-disque de test, donc un chemin accepté produit une erreur d'`OSError` interceptée, pas une fuite.
+`helpers/disk_helper.py` has its own tests (85 %). What was missing is the wiring: whether
+`listdir` and `streamfile` actually apply those guards before touching the disk, with the
+`rec_id` and the `path` the interface really sends. The applications do not exist on the test
+disk, so an accepted path produces an intercepted `OSError`, not a leak.
 """
 
 import sys
@@ -42,7 +42,7 @@ class ListDirTests(RouteTestCase):
         self.admin = self.login_as("bob@example.com", ["admin"])
 
     def _spy_on_list_dir(self):
-        """Intercepte `list_dir` : on teste le passage du garde, pas le disque du bac à sable."""
+        """Intercepts `list_dir`: we test the guard being passed, not the sandbox disk."""
         calls = []
         original = files_routes.list_dir
 
@@ -62,8 +62,8 @@ class ListDirTests(RouteTestCase):
         self.assertEqual(calls, [], "le disque ne doit pas etre touche quand le garde refuse")
 
     def test_the_logs_directory_opens_with_the_logs_privilege(self):
-        # la racine de /logs, c'est la chaine vide : c'est ce que la console envoie
-        # (`path=""`), pas "/" qui est un chemin absolu et se fait refuser par resolve_under_root
+        # the root of /logs is the empty string: that is what the console sends (`path=""`),
+        # not "/", which is an absolute path and is refused by resolve_under_root
         calls = self._spy_on_list_dir()
         code, body, _ = self.call("post", "/api/v1/listdir", self.logs_user,
                                   {"rec_id": -1, "path": ""})
@@ -78,14 +78,15 @@ class ListDirTests(RouteTestCase):
         self.assertEqual(calls, ["/logs/nginx"])
 
     def test_a_slash_is_not_the_root_of_the_logs_directory(self):
-        # contrat actuel : "/" est un chemin absolu, donc refuse (meme pour un admin). Le
-        # changer elargirait la racine sans que rien ne le signale.
+        # current contract: "/" is an absolute path, hence refused (even for an admin).
+        # Changing that would widen the root without anything signalling it.
         code, body, _ = self.call("post", "/api/v1/listdir", self.admin,
                                   {"rec_id": -1, "path": "/"})
         self.assertEqual(body["error"], "not allowed")
 
     def test_an_app_reserved_to_admins_is_unknown_for_a_simple_account(self):
-        # `retrieve_app_info` renvoie (None, None) : le compte n'apprend pas meme que l'app existe
+        # `retrieve_app_info` returns (None, None): the account does not even learn that the
+        # app exists
         code, body, _ = self.call("post", "/api/v1/listdir", self.simple,
                                   {"rec_id": "files-admin", "path": "/"})
         self.assertEqual(body["error"], "unknown app")

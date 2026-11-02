@@ -15,9 +15,9 @@ class Settings(BaseSettings):
     WELCOMEMESSAGE: str = ""
     ICON: str = ""
 
-    # Mentions légales de la notice de protection des données. Vides, elles affichent
-    # « à compléter » ; renseignées, elles remplacent le texte dans les trois langues sans
-    # reconstruire l'image — il suffit de redémarrer l'API.
+    # Legal details of the data protection notice. Left empty, they display
+    # "à compléter"; filled in, they replace the text in all three languages without
+    # rebuilding the image — restarting the API is enough.
     PRIVACY_CONTROLLER: str = ""
     PRIVACY_ADDRESS: str = ""
     PRIVACY_CONTACT: str = ""

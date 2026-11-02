@@ -1,23 +1,23 @@
-"""Agrégation des compteurs entre les workers gunicorn.
+"""Aggregation of the counters across gunicorn workers.
 
-Chaque worker tient ses compteurs en mémoire : ``state.requests_total`` vaut trois choses
-différentes selon celui qui répond au scrape. Prometheus réutilise sa connexion HTTP, donc il
-interroge toujours le même worker et ne voit qu'un tiers du trafic.
+Each worker holds its counters in memory: ``state.requests_total`` is three different things
+depending on which one answers the scrape. Prometheus reuses its HTTP connection, so it always
+queries the same worker and sees only a third of the traffic.
 
-Chaque worker publie donc ses compteurs dans un hachage Redis (``HSET nyx_counters <pid>``), et
-``/metrics`` additionne ce que tous les workers ont publié récemment. Un worker mort disparaît de
-la somme au bout de ``STALE_AFTER`` secondes : sans cela, un redéploiement laisserait ses derniers
-chiffres figés dans le total pour toujours.
+Each worker therefore publishes its counters into a Redis hash (``HSET nyx_counters <pid>``), and
+``/metrics`` adds up what every worker published recently. A dead worker disappears from the sum
+after ``STALE_AFTER`` seconds: without that, a redeployment would leave its last figures frozen in
+the total forever.
 
-L'agrégation est une fonction pure, testable sans Redis.
+The aggregation is a pure function, testable without Redis.
 """
 
 import json
 import time
 
 HASH_KEY = "nyx_counters"
-STALE_AFTER = 30        # un worker muet depuis plus longtemps est considéré mort
-PUBLISH_TTL = 120       # le hachage entier expire si plus personne ne publie
+STALE_AFTER = 30        # a worker silent for longer than this is considered dead
+PUBLISH_TTL = 120       # the whole hash expires if nobody publishes any more
 
 COUNTERS = (
     "requests_total",
@@ -29,13 +29,13 @@ COUNTERS = (
 
 
 def snapshot(state):
-    """Valeurs à publier pour ce worker."""
+    """Values to publish for this worker."""
     return {name: int(getattr(state, name, 0) or 0) for name in COUNTERS}
 
 
 def publish(conn, pid, counters, now=None):
-    """Écrit l'état de ce worker dans Redis. Silencieux en cas d'échec : la métrique n'est pas
-    une fonction vitale de l'API."""
+    """Writes this worker's state into Redis. Silent on failure: the metric is not a
+    vital function of the API."""
     try:
         payload = {"at": int(now if now is not None else time.time())}
         payload.update({name: int(value) for name, value in counters.items()})
@@ -46,10 +46,10 @@ def publish(conn, pid, counters, now=None):
 
 
 def aggregate(entries, now=None, stale_after=STALE_AFTER):
-    """Somme les compteurs des workers vivants.
+    """Sums the counters of the live workers.
 
-    ``entries`` : liste de couples ``(champ, valeur_brute)`` telle que la renvoie ``HGETALL``,
-    ou de dictionnaires déjà décodés. Les entrées trop anciennes ou illisibles sont ignorées.
+    ``entries``: list of ``(field, raw value)`` pairs as returned by ``HGETALL``, or of
+    dictionaries already decoded. Entries too old or unreadable are ignored.
     """
     now = int(now if now is not None else time.time())
     totals = {name: 0 for name in COUNTERS}
@@ -65,7 +65,7 @@ def aggregate(entries, now=None, stale_after=STALE_AFTER):
             continue
         published_at = int(payload.get("at") or 0)
         if now - published_at > stale_after:
-            continue          # worker disparu : ses chiffres ne doivent pas se figer dans le total
+            continue          # dead worker: its figures must not freeze in the total
         workers += 1
         for name in COUNTERS:
             try:
@@ -77,7 +77,7 @@ def aggregate(entries, now=None, stale_after=STALE_AFTER):
 
 
 def read_aggregate(conn, now=None, stale_after=STALE_AFTER):
-    """Lit le hachage Redis puis agrège. ``None`` si Redis est injoignable."""
+    """Reads the Redis hash then aggregates. ``None`` if Redis is unreachable."""
     try:
         raw = conn.hgetall(HASH_KEY)
     except Exception:

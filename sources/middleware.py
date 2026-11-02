@@ -84,14 +84,14 @@ def checkAPIKey(request):
 
 
 def getUserFromToken(request, token=None, fresh=False):
-    """Payload du jeton ; `fresh=True` ignore la copie en mémoire de ce worker.
+    """Token payload; `fresh=True` ignores this worker's in-memory copy.
 
-    Chaque worker gunicorn garde sa propre copie du payload pendant cinq minutes (`TTLCache`),
-    et seule une déconnexion la vide plus tôt. Un changement de mot de passe écrit le nouveau
-    payload dans Redis et dans le worker qui a servi la requête : les deux autres continuaient
-    donc à répondre MUST_CHANGE_PASSWORD à un utilisateur qui venait de choisir son mot de
-    passe, jusqu'à cinq minutes et sur un appel sur trois (mesuré en production). Relire Redis
-    au moment de refuser coûte une requête, en lecture seule, dans la seule phase bridée.
+    Each gunicorn worker keeps its own copy of the payload for five minutes (`TTLCache`), and
+    only a logout empties it earlier. A password change writes the new payload into Redis and
+    into the worker that served the request: the other two therefore kept answering
+    MUST_CHANGE_PASSWORD to a user who had just chosen their password, for up to five minutes
+    and on one call in three (measured in production). Re-reading Redis at the moment of the
+    refusal costs one read-only request, in the only throttled phase.
     """
     if token is None:
         token, _ = request_token(request)
@@ -103,8 +103,8 @@ def getUserFromToken(request, token=None, fresh=False):
         try:
             redusr = state.redisserver.get("nyx_tok_" + token)
         except Exception:
-            # Redis injoignable : mieux vaut garder la session en cours que refuser tout le
-            # monde ; la copie mémoire fait foi jusqu'au retour du cache.
+            # Redis unreachable: better to keep the current session than to turn everyone
+            # away; the in-memory copy is authoritative until the cache is back.
             logger.warning("Jetons : Redis injoignable, copie en mémoire conservée", exc_info=True)
             return state.tokens.get(token)
         if redusr is not None:
@@ -113,8 +113,8 @@ def getUserFromToken(request, token=None, fresh=False):
             state.tokens[token] = redusrobj
             logger.info("Token reinitialized from redis cluster.")
             return redusrobj
-        # Le jeton n'existe plus côté Redis (déconnexion faite ailleurs) : la copie locale est
-        # périmée, on la jette plutôt que de continuer à l'honorer.
+        # The token no longer exists on the Redis side (logout done elsewhere): the local
+        # copy is stale, we drop it rather than keep honouring it.
         state.tokens.pop(token, None)
 
     logger.info("Invalid Token:" + fingerprint(token))
@@ -180,18 +180,19 @@ def token_required(*roles):
                     )
                 usr = getUserFromToken(request, token)
                 if usr is not None and must_change_password(usr, request.path):
-                    # Le drapeau a pu être levé par un autre worker : on relit Redis avant de
-                    # refuser. Sans cela, un utilisateur qui vient de choisir son mot de passe
-                    # reste bridé jusqu'à cinq minutes sur les workers qui avaient mémorisé le
-                    # jeton bridé — et il ne comprend pas pourquoi on le lui redemande.
+                    # The flag may have been cleared by another worker: we re-read Redis
+                    # before refusing. Without that, a user who has just chosen their
+                    # password stays throttled for up to five minutes on the workers that
+                    # had cached the throttled token — and cannot understand why it is
+                    # asked for again.
                     refreshed = getUserFromToken(request, token, fresh=True)
                     if refreshed is not None:
                         usr = refreshed
                 if usr is None:
                     ret = {'error': "UNKNOWN_TOKEN"}
                 elif must_change_password(usr, request.path):
-                    # Mot de passe provisoire : le jeton n'ouvre que le changement de mot de
-                    # passe et la déconnexion. Ce n'est pas une politesse de l'interface.
+                    # Provisional password: the token only opens the password change and
+                    # the logout. This is not a courtesy of the interface.
                     ret = {'error': "MUST_CHANGE_PASSWORD"}
                 else:
                     ok = False

@@ -1,7 +1,7 @@
-"""Politique de mot de passe : mots de passe provisoires et accès bridé.
+"""Password policy: provisional passwords and throttled access.
 
-Ces règles remplacent le condensat partagé que l'interface envoyait pour tous les comptes neufs.
-Elles sont testées sans Flask ni Redis : ce sont des fonctions pures.
+These rules replace the shared hash the interface sent for every new account. They are tested
+without Flask or Redis: they are pure functions.
 """
 
 import sys
@@ -20,7 +20,7 @@ class TemporaryPasswordTest(unittest.TestCase):
         self.assertRegex(mot, r"^[A-Za-z0-9_-]+$", "le mot de passe doit être recopiable sans ambiguïté")
 
     def test_two_accounts_never_share_a_password(self):
-        """Le défaut corrigé : un condensat commun à tous les comptes."""
+        """The defect being fixed: one hash common to every account."""
         mots = {policy.generate_temporary_password() for _ in range(200)}
         self.assertEqual(len(mots), 200)
 
@@ -47,7 +47,7 @@ class AccessBeforeChangeTest(unittest.TestCase):
             self.assertFalse(policy.must_change_password(usr, chemin), chemin)
 
     def test_a_false_flag_does_not_restrict(self):
-        """Après le changement, la valeur est False et non absente : elle doit ouvrir l'API."""
+        """After the change, the value is False and not absent: it must open the API."""
         self.assertFalse(policy.must_change_password({"login": "bob", "mustResetPassword": False},
                                                      "/api/v1/generic/nyx_app"))
 

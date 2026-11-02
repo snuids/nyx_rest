@@ -1,27 +1,27 @@
-"""Politique de mot de passe des comptes NYX.
+"""Password policy for NYX accounts.
 
-Jusqu'ici, l'interface créait chaque compte avec le **même** condensat pbkdf2 écrit en dur dans
-`User.vue`. Tous les comptes neufs partageaient donc le même secret jusqu'à ce que quelqu'un pense
-à le réinitialiser — un mot de passe partagé que personne ne connaît est une porte laissée ouverte.
+Until now, the interface created every account with the **same** pbkdf2 hash hard-coded in
+`User.vue`. Every new account therefore shared the same secret until someone thought of
+resetting it — a shared password that nobody knows is a door left open.
 
-Deux règles remplacent cette pratique :
+Two rules replace that practice:
 
-* un compte créé sans mot de passe reçoit un mot de passe **aléatoire que personne ne connaît**,
-  et le drapeau ``mustResetPassword`` ;
-* tant que le drapeau est levé, le jeton obtenu à la connexion n'ouvre que la route de changement
-  de mot de passe et la déconnexion (voir ``middleware.token_required``).
+* an account created without a password receives a **random password that nobody knows**,
+  and the ``mustResetPassword`` flag;
+* while the flag is set, the token obtained at login only opens the password change route
+  and the logout (see ``middleware.token_required``).
 
-Le reste de l'API n'est donc pas atteignable avec un mot de passe provisoire : le changement n'est
-pas une politesse de l'interface, c'est une condition d'accès.
+The rest of the API is therefore unreachable with a provisional password: the change is not a
+courtesy of the interface, it is a condition of access.
 """
 
 import secrets
 
-# 18 octets donnent 24 caractères url-safe : 144 bits d'entropie, hors de portée d'une recherche
-# exhaustive, et sans caractère ambigu à recopier depuis un écran ou un message.
+# 18 bytes give 24 url-safe characters: 144 bits of entropy, out of reach of an exhaustive
+# search, and with no ambiguous character to copy from a screen or a message.
 TEMPORARY_BYTES = 18
 
-# Routes accessibles avec un mot de passe provisoire. Tout le reste est refusé.
+# Routes reachable with a provisional password. Everything else is refused.
 ALLOWED_BEFORE_CHANGE = (
     "/api/v1/cred/changepassword",
     "/api/v1/cred/logout",
@@ -33,28 +33,28 @@ MIN_LENGTH = 12
 
 
 def generate_temporary_password():
-    """Mot de passe aléatoire, jamais affiché ni transmis : le compte est inutilisable tel quel."""
+    """Random password, never displayed nor transmitted: the account is unusable as it is."""
     return secrets.token_urlsafe(TEMPORARY_BYTES)
 
 
 def is_allowed_before_change(path):
-    """Vrai si la route reste ouverte tant que le mot de passe n'a pas été choisi."""
+    """True if the route stays open as long as the password has not been chosen."""
     return (path or "").rstrip("/") in ALLOWED_BEFORE_CHANGE
 
 
 def must_change_password(usr, path):
-    """Vrai si l'appel doit être refusé parce que le mot de passe n'a pas encore été choisi."""
+    """True if the call must be refused because the password has not been chosen yet."""
     if not usr or not usr.get("mustResetPassword"):
         return False
     return not is_allowed_before_change(path)
 
 
 def check_new_password(password, login=""):
-    """Contrôles minimaux sur un mot de passe choisi par l'utilisateur.
+    """Minimal checks on a password chosen by the user.
 
-    Longueur seulement : les règles de composition (majuscule, chiffre, symbole) sont
-    aujourd'hui déconseillées par l'ANSSI et le NIST, elles produisent des mots de passe
-    prévisibles et notés sur un papier. La longueur est ce qui compte.
+    Length only: composition rules (upper case, digit, symbol) are now discouraged by ANSSI
+    and NIST, they produce predictable passwords written down on a piece of paper. Length is
+    what matters.
     """
     if not password or len(password) < MIN_LENGTH:
         return f"Le mot de passe doit contenir au moins {MIN_LENGTH} caractères."

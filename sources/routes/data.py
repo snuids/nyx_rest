@@ -441,19 +441,19 @@ def register(app, api, name_space):
             logger.info("Index Not Allowed for user.")
             return {'error': "Not Allowed", "records": [], "aggs": []}
 
-        # Écrire dans ces indices, c'est s'attribuer des droits : `nyx_user` porte les
-        # privilèges et les condensats, `nyx_app` décide de ce que chaque écran peut faire,
-        # `nyx_privilege` de ce que chaque rôle peut voir, `nyx_indice` de quelles données
-        # chaque index expose et `nyx_filter` des lignes visibles. Les laisser ouverts rendait
-        # la restriction de lecture contournable en deux requêtes.
+        # Writing to these indices means granting oneself rights: `nyx_user` holds the
+        # privileges and the password hashes, `nyx_app` decides what each screen may do,
+        # `nyx_privilege` what each role may see, `nyx_indice` which data each index
+        # exposes and `nyx_filter` which rows are visible. Leaving them open made the read
+        # restriction bypassable in two requests.
         if met in ("post", "delete") and requires_admin_for_write(index) and not is_admin(user):
             logger.info("index protégé : écriture refusée à un compte non administrateur")
             return {'error': "Not Allowed"}
 
         if met == 'get':
-            # `can_use_indice` ne voit qu'un nom d'index : il ne peut pas dire *quel* document
-            # est demandé. La lecture par identifiant a donc son propre contrôle, sinon
-            # `GET /generic/nyx_user/<autre>` rendait le condensat d'un autre compte.
+            # `can_use_indice` only sees an index name: it cannot tell *which* document is
+            # requested. Reading by identifier therefore has its own check, otherwise
+            # `GET /generic/nyx_user/<other>` returned another account's hash.
             if is_nyx_user_indice(index) and not can_read_nyx_user(user, object):
                 logger.info("nyx_user : lecture d'un autre compte refusée")
                 return {'error': "Not Allowed", "data": None}
@@ -472,10 +472,10 @@ def register(app, api, name_space):
                     if provided and "$pbkdf2-sha256" not in provided:
                         dataobj["password"] = pbkdf2_sha256.hash(provided)
                     elif not provided or "$pbkdf2-sha256" in provided:
-                        # Aucun mot de passe utilisable fourni (champ absent, vide, ou condensat
-                        # figé comme celui que l'interface envoyait pour tous les comptes) :
-                        # on en fabrique un que personne ne connaît, et le compte reste fermé
-                        # tant que son propriétaire n'en a pas choisi un.
+                        # No usable password supplied (field absent, empty, or a hash
+                        # frozen like the one the interface sent for every account): one is
+                        # generated that nobody knows, and the account stays closed until
+                        # its owner has chosen one.
                         dataobj["password"] = pbkdf2_sha256.hash(generate_temporary_password())
                         dataobj["mustResetPassword"] = True
                     data = json.dumps(dataobj)

@@ -10,7 +10,7 @@ import threading
 from datetime import datetime, timedelta
 
 # Application metadata
-VERSION = "3.22.14"
+VERSION = "3.22.15"
 MODULE = "nyx_rest_" + str(os.getpid())
 
 # Config-derived constants (set during startup in nyx_rest_api_plus.py)
@@ -52,8 +52,8 @@ last_translation_refresh = datetime.now() - timedelta(minutes=10)
 # Runtime counters, exposed by /api/v1/metrics (reset when the worker restarts)
 requests_total = 0
 errors_total = 0
-auth_failures_total = 0     # mot de passe ou code à deux phases refusé
-auth_blocked_total = 0      # tentatives écartées par le garde (429)
+auth_failures_total = 0     # password or two-phase code refused
+auth_blocked_total = 0      # attempts turned away by the guard (429)
 last_lifesign = None
 
 # Auth tokens

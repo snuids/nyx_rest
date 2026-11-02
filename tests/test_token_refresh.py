@@ -1,12 +1,12 @@
-"""Copie du jeton en mémoire : elle doit pouvoir être ignorée quand elle est périmée.
+"""In-memory copy of the token: it must be possible to ignore it when it is stale.
 
-Chaque worker gunicorn garde le payload du jeton dans `state.tokens` (un `TTLCache` de cinq
-minutes) ; seule une déconnexion le vide plus tôt. Le changement de mot de passe écrit le
-nouveau payload dans Redis et dans le worker qui a servi la requête. Les autres workers
-répondaient donc encore MUST_CHANGE_PASSWORD à un utilisateur qui venait de choisir son mot de
-passe — mesuré en production : 3 appels sur 12, pendant jusqu'à cinq minutes.
+Each gunicorn worker keeps the token payload in `state.tokens` (a five-minute `TTLCache`);
+only a logout empties it earlier. A password change writes the new payload into Redis and
+into the worker that served the request. The other workers therefore still answered
+MUST_CHANGE_PASSWORD to a user who had just chosen their password — measured in production:
+3 calls out of 12, for up to five minutes.
 
-`getUserFromToken(..., fresh=True)` est la relecture qui manquait.
+`getUserFromToken(..., fresh=True)` is the re-read that was missing.
 """
 
 import json
@@ -53,7 +53,8 @@ class TokenCacheTests(unittest.TestCase):
         self.assertEqual(redis.reads, 0, "le cache local doit eviter l'appel a Redis")
 
     def test_fresh_ignores_the_stale_copy_and_refreshes_it(self):
-        # le worker avait memorise le jeton bride ; le mot de passe vient d'etre change ailleurs
+        # the worker had cached the throttled token; the password has just been changed
+        # elsewhere
         state.tokens[TOKEN] = payload(True)
         state.redisserver = FakeRedis(payload(False))
         refreshed = getUserFromToken(None, TOKEN, fresh=True)
@@ -73,8 +74,8 @@ class TokenCacheTests(unittest.TestCase):
         self.assertIn(TOKEN, state.tokens)
 
     def test_fresh_also_covers_a_redis_outage(self):
-        # Redis tombe : on garde la session en cours plutôt que de renvoyer tout le monde au
-        # login. La copie mémoire fait foi jusqu'au retour du cache.
+        # Redis goes down: we keep the current session rather than send everyone back to
+        # the login. The in-memory copy is authoritative until the cache is back.
         class Broken:
             def get(self, key):
                 raise ConnectionError("redis is down")

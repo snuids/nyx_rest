@@ -1,10 +1,10 @@
-"""Routes génériques : qui peut lire quel document, et qui peut écrire dans quel index.
+"""Generic routes: who may read which document, and who may write to which index.
 
-Ces routes portaient seules la surface d'escalade trouvée à l'audit : un compte à simple tag
-d'application lisait les condensats de tout le monde et pouvait écrire dans `nyx_user`,
-`nyx_app`, `nyx_privilege`, `nyx_indice` et `nyx_filter`. Les tests ci-dessous portent sur le
-*câblage* — refus avant le cluster, corps de requête produit — pas sur la logique d'accès, qui
-a ses propres tests (`test_nyx_user_access.py`, `test_can_use_indice.py`).
+These routes carried on their own the escalation surface found in the audit: an account with
+a mere application tag read everyone's hashes and could write to `nyx_user`, `nyx_app`,
+`nyx_privilege`, `nyx_indice` and `nyx_filter`. The tests below bear on the *wiring* —
+refusal before the cluster, request body produced — not on the access logic, which has its
+own tests (`test_nyx_user_access.py`, `test_can_use_indice.py`).
 """
 
 import json
@@ -69,7 +69,7 @@ class GenericReadTests(RouteTestCase):
         self.assertEqual(self.es.calls, [])
 
     def test_the_token_in_the_query_string_is_accepted(self):
-        # la console envoie encore le jeton en parametre : ce contrat ne doit pas casser
+        # the console still sends the token as a parameter: that contract must not break
         code, body, _ = self.call(
             "get", "/api/v1/generic/nyx_user/alice@example.com?token=" + self.alice)
         self.assertEqual(body["error"], "")
@@ -172,7 +172,7 @@ class GenericSearchTests(RouteTestCase):
         self.assertNotIn("bob@example.com", filters)
 
     def test_the_wildcard_form_is_restricted_too(self):
-        # c'est la forme qu'envoie l'interface pour lister les comptes
+        # this is the form the interface sends to list the accounts
         self.call("post", "/api/v1/generic_search/nyx_user*", self.alice, {"size": 10})
         self.assertEqual(self.captured["index"], "nyx_user*")
         self.assertIn("alice@example.com", self._filter_of("nyx_user*"))

@@ -1,15 +1,15 @@
-"""Lecture de `nyx_user` : un compte ordinaire ne voit que sa propre fiche.
+"""Reading `nyx_user`: an ordinary account only sees its own record.
 
-L'index porte les condensats pbkdf2 de tous les comptes, et `can_use_indice` ne reçoit qu'un
-nom d'index — il ne peut donc pas savoir *quel* document est demandé. Deux contrôles sont
-nécessaires et doivent refuser la même chose, sinon la restriction se contourne par l'autre
-route :
+The index carries the pbkdf2 hashes of every account, and `can_use_indice` only receives an
+index name — it therefore cannot tell *which* document is requested. Two checks are needed
+and must refuse the same thing, otherwise the restriction is bypassed through the other
+route:
 
-* `can_use_indice` ajoute une clause `bool.filter` (« son propre compte ») à toute recherche
-  ou agrégation sur l'index, donc à `generic_search`, `queryFilter` et aux exports ;
-* `can_read_nyx_user` garde la lecture directe `GET /generic/nyx_user/<id>`.
+* `can_use_indice` adds a `bool.filter` clause ("own account") to every search or
+  aggregation on the index, hence to `generic_search`, `queryFilter` and the exports;
+* `can_read_nyx_user` guards the direct read `GET /generic/nyx_user/<id>`.
 
-Un compte `admin` n'est pas restreint : l'écran d'administration des utilisateurs en a besoin.
+An `admin` account is not restricted: the user administration screen needs it.
 """
 
 import sys
@@ -46,8 +46,8 @@ def filters_of(query):
 
 class NyxUserIndexDetectionTests(unittest.TestCase):
     def test_the_index_and_its_reindex_alias_are_recognised(self):
-        # la production sert un alias : nommer `reindexed-nyx_user-v8` dans generic_search
-        # doit tomber sous la même règle que `nyx_user`
+        # production serves an alias: naming `reindexed-nyx_user-v8` in generic_search
+        # must fall under the same rule as `nyx_user`
         self.assertTrue(is_nyx_user_indice("nyx_user"))
         self.assertTrue(is_nyx_user_indice("reindexed-nyx_user-v8"))
 
@@ -56,13 +56,13 @@ class NyxUserIndexDetectionTests(unittest.TestCase):
             self.assertFalse(is_nyx_user_indice(name), name)
 
     def test_a_wildcard_that_designates_nyx_user_is_recognised(self):
-        # l'interface liste les comptes par `generic_search/nyx_user*` : sans cette forme,
-        # la restriction se contournait par un astérisque
+        # the interface lists accounts through `generic_search/nyx_user*`: without that
+        # form, the restriction was bypassed with a single asterisk
         for name in ("nyx_user*", "nyx_us*", "nyx_*", "*", "?yx_user", "reindexed-nyx_user*"):
             self.assertTrue(is_nyx_user_indice(name), name)
 
     def test_a_wildcard_on_another_family_is_left_alone(self):
-        # quatre écrans de production lisent une famille de cette façon
+        # four production screens read a family this way
         for name in ("nyx_apicalls*", "nyx_energy*", "nyx_alert*", "airport_udropstatus*",
                      "deliveries-*"):
             self.assertFalse(is_nyx_user_indice(name), name)
@@ -73,8 +73,8 @@ class NyxUserIndexDetectionTests(unittest.TestCase):
 
 class OwnAccountIdentityTests(unittest.TestCase):
     def test_the_login_and_the_document_id_are_both_kept(self):
-        # `_id` porte l'e-mail et `login` le nom court sur huit comptes : l'un des deux
-        # suffit à lire sa fiche, donc les deux sont conservés
+        # `_id` carries the e-mail and `login` the short name on eight accounts: either of
+        # the two is enough to read one's own record, so both are kept
         self.assertEqual(own_account_ids({"id": "bob@example.com", "login": "bob"}),
                          ["bob@example.com", "bob"])
 
@@ -95,7 +95,7 @@ class OwnAccountIdentityTests(unittest.TestCase):
 
 
 class WriteRestrictionTests(unittest.TestCase):
-    """Les indices qui portent des droits sont en lecture seule pour un non-admin."""
+    """Indices that carry rights are read-only for a non-admin."""
 
     def test_the_account_and_configuration_indices_are_protected(self):
         for name in ("nyx_user", "reindexed-nyx_user-v8", "nyx_app", "nyx_privilege",
@@ -103,14 +103,15 @@ class WriteRestrictionTests(unittest.TestCase):
             self.assertTrue(requires_admin_for_write(name), name)
 
     def test_the_access_rule_and_filter_catalogues_are_protected(self):
-        # nyx_indice dit qui accède à quel index, nyx_filter qui voit quelles lignes :
-        # les réécrire reviendrait à s'attribuer des droits sans toucher à nyx_privilege.
+        # nyx_indice says who accesses which index, nyx_filter who sees which rows:
+        # rewriting them would amount to granting oneself rights without touching
+        # nyx_privilege.
         for name in ("nyx_indice", "reindexed-nyx_indice-v8", "nyx_filter",
                      "reindexed-nyx_filter", "nyx_indice*", "nyx_filter-2026"):
             self.assertTrue(requires_admin_for_write(name), name)
 
     def test_data_indices_are_not_protected(self):
-        # une app métier doit rester éditable par ses utilisateurs
+        # a business app must stay editable by its users
         for name in ("airport_alert-2026.11", "nyx_energy-2026.11", "nyx_lambda",
                      "nyx_user_history", "deliveries-2026", "nyx_indice_history",
                      "nyx_filters_business"):
@@ -144,20 +145,21 @@ class SearchRestrictionTests(unittest.TestCase):
         self.assertEqual(len(filters_of(query)), 1)
 
     def test_the_restriction_also_covers_the_wildcard_form(self):
-        # `generic_search/nyx_user*` : la forme qu'utilise l'interface pour lister les
-        # comptes, et celle qui laissait passer les 21 condensats
+        # `generic_search/nyx_user*`: the form the interface uses to list the accounts, and
+        # the one that let the 21 hashes through
         allowed, query, _ = can_use_indice("nyx_user*", user(), None)
         self.assertTrue(allowed)
         self.assertEqual(len(filters_of(query)), 1)
 
     def test_an_admin_keeps_the_whole_index(self):
-        # sans cette exception, l'écran d'administration des comptes n'afficherait que soi-même
+        # without that exception, the account administration screen would only display
+        # oneself
         allowed, query, _ = can_use_indice("nyx_user", user(privileges=["admin"]), None)
         self.assertTrue(allowed)
         self.assertEqual(filters_of(query), [])
 
     def test_a_token_without_identity_is_refused_rather_than_broadened(self):
-        # échouer en fermé : un jeton incomplet ne doit pas rendre l'index entier
+        # fail closed: an incomplete token must not hand over the whole index
         allowed, _, _ = can_use_indice("nyx_user", {"privileges": ["YUL"]}, None)
         self.assertFalse(allowed)
 
@@ -167,8 +169,8 @@ class SearchRestrictionTests(unittest.TestCase):
         self.assertEqual(filters_of(query), [])
 
     def test_the_restriction_survives_the_row_filter_branch(self):
-        # la branche `filtercolumn` réécrit la query_string puis retourne : le filtre ajouté
-        # avant la boucle de règles doit donc être porté par `bool.filter`, pas par la chaîne
+        # the `filtercolumn` branch rewrites the query_string then returns: the filter added
+        # before the rule loop must therefore be carried by `bool.filter`, not by the string
         state.indices = [rule("nyx_user", filtercolumn="site")]
         allowed, query, _ = can_use_indice("nyx_user", user(filters=["A"]), None)
         self.assertTrue(allowed)

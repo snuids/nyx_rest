@@ -1,8 +1,8 @@
-"""Routes d'authentification : login, garde anti-force-brute, bridage du premier login, logout.
+"""Authentication routes: login, brute-force guard, first-login throttling, logout.
 
-`routes/auth.py` était à 0 % de couverture alors qu'il porte le seul point d'entrée non
-authentifié de la plateforme. Les tests ci-dessous exercent la route réelle (décorateurs compris,
-donc `token_required` et le garde) contre un faux cluster et un faux Redis.
+`routes/auth.py` was at 0 % coverage although it carries the only unauthenticated entry point
+of the platform. The tests below exercise the real route (decorators included, hence
+`token_required` and the guard) against a fake cluster and a fake Redis.
 """
 
 import json
@@ -28,7 +28,7 @@ else:                                                      # pragma: no cover
 
 
 def users():
-    """Deux comptes : un simple et un administrateur."""
+    """Two accounts: one plain and one administrator."""
     return {
         "alice@example.com": {"login": "alice@example.com", "privileges": ["YUL"],
                               "password": pbkdf2_sha256.hash(PASSWORD),
@@ -97,8 +97,8 @@ class LoginTests(RouteTestCase):
         self.assertNotIn("loginfail:user:alice@example.com", self.redis.store)
 
     def test_a_non_admin_cannot_impersonate_through_the_arrow_syntax(self):
-        # « admin>autre » est reserve aux administrateurs : un simple compte doit atterrir sur
-        # le sien, c'est-a-dire echouer ici puisque le mot de passe est celui d'alice
+        # "admin>other" is reserved for administrators: a plain account must land on its
+        # own, that is, fail here since the password is alice's
         code, body, _ = self._login("alice@example.com>bob@example.com", PASSWORD)
         self.assertEqual(body["error"], "")
         self.assertEqual(body["cred"]["user"]["login"], "alice@example.com")
@@ -138,11 +138,11 @@ class BridedPasswordChangeTests(RouteTestCase):
         code, body, _ = self.call("post", "/api/v1/cred/changepassword", self.token,
                                   {"old_password": PASSWORD, "new_password": "Nouveau#Pass2026"})
         self.assertEqual(body["error"], "")
-        # le meme jeton doit passer immediatement, y compris sur une autre requete
+        # the same token must pass immediately, including on another request
         for _ in range(3):
             code, body, _ = self.call("get", "/api/v1/status", self.token)
             self.assertEqual(body["error"], "", "le jeton doit etre debride sans reconnexion")
-        # et la copie Redis doit porter le drapeau retombe
+        # and the Redis copy must carry the cleared flag
         stored = json.loads(self.redis.get("nyx_tok_" + self.token))
         self.assertFalse(stored["mustResetPassword"])
 
