@@ -200,7 +200,7 @@ class FakeBroker:
         return [body for dest, body in self.messages if dest == destination]
 
 
-@unittest.skipUnless(HAVE_ROUTE_DEPS, "dépendances de route absentes (" + DEPS_MISSING + ")")
+@unittest.skipUnless(HAVE_ROUTE_DEPS, "route dependencies missing (" + DEPS_MISSING + ")")
 class RouteTestCase(unittest.TestCase):
     """Base of the route tests: fakes installed, application mounted, `state` restored.
 

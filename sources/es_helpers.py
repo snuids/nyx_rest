@@ -205,7 +205,7 @@ def can_use_indice(indice, user, query):
     if is_nyx_user_indice(indice) and not is_admin(user):
         own = nyx_user_read_filter(user)
         if own is None:
-            logger.info("nyx_user : aucune identité dans le jeton, lecture refusée")
+            logger.info("nyx_user: no identity in the token, read refused")
             return (False, query, resultsmustbefiltered)
         query.setdefault("bool", {}).setdefault("filter", []).append(own)
 

@@ -105,7 +105,7 @@ def getUserFromToken(request, token=None, fresh=False):
         except Exception:
             # Redis unreachable: better to keep the current session than to turn everyone
             # away; the in-memory copy is authoritative until the cache is back.
-            logger.warning("Jetons : Redis injoignable, copie en mémoire conservée", exc_info=True)
+            logger.warning("Tokens: Redis unreachable, in-memory copy kept", exc_info=True)
             return state.tokens.get(token)
         if redusr is not None:
             logger.info("Retrieved user for token " + fingerprint(token) + " from redis.")

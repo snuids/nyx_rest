@@ -78,7 +78,7 @@ class GuardTest(unittest.TestCase):
     def test_a_handful_of_attempts_is_not_punished(self):
         for expected in range(guard.MAX_ATTEMPTS - 1):
             wait = guard.register_failure(self.redis, "amarchand@icloud.com", "203.0.113.9")
-            self.assertEqual(wait, 0, f"gel prématuré après {expected + 1} échec(s)")
+            self.assertEqual(wait, 0, f"premature freeze after {expected + 1} failure(s)")
 
     def test_the_first_freeze_arrives_at_the_threshold(self):
         wait = self.fail_times(guard.MAX_ATTEMPTS)
@@ -103,7 +103,7 @@ class GuardTest(unittest.TestCase):
         self.fail_times(20)
         self.redis.advance(guard.WINDOW + 1)   # the window falls back…
         remaining = guard.retry_after(self.redis, "amarchand@icloud.com", "203.0.113.9")
-        self.assertGreater(remaining, 3000, "le gel d'une heure doit survivre à la fenêtre de 5 min")
+        self.assertGreater(remaining, 3000, "the one-hour freeze must outlast the 5 min window")
         self.assertLessEqual(remaining, 3600)
 
     def test_a_success_wipes_the_counters(self):

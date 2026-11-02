@@ -176,7 +176,7 @@ class BridedPasswordChangeTests(RouteTestCase):
     def test_a_too_short_password_is_refused_by_the_policy(self):
         code, body, _ = self.call("post", "/api/v1/cred/changepassword", self.token,
                                   {"old_password": PASSWORD, "new_password": "court"})
-        self.assertIn("caractères", body["error"])
+        self.assertIn("characters", body["error"])
         self.assertEqual(self.es.written, [])
 
     def test_a_missing_field_is_refused_before_any_work(self):
