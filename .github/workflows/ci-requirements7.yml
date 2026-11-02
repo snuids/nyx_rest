@@ -45,15 +45,20 @@ jobs:
         run: docker run --rm nyx_rest:ci python -m compileall -q /opt/sources
 
       # The suite runs in the image that has just been built: the dependencies are already
-      # installed there (pandas, psycopg2, pyodbc, passlib), and the repository is mounted so
-      # that the tests exercise the code of the commit rather than the copy frozen in the
-      # image.
-      # The route tests skip themselves when dependencies are missing; here they are
-      # present, so a skip signals a regression, not an incomplete environment.
-      - name: Run the test suite
+      # installed there (pandas, psycopg2, passlib, ldap3, tzlocal…), and the repository is
+      # mounted so that the tests exercise the code of the commit rather than the copy frozen
+      # in the image.
+      #
+      # Two ways this job lied before:
+      #   * a skipped test still exits 0 — the route tests skip themselves when a dependency
+      #     is missing, so a missing import silently disabled a third of the suite;
+      #   * nothing measured how much code the tests actually touched.
+      # So: fail on any skip, and gate on a coverage floor. 40 is the level reached on
+      # 2026-11-02 (43 % measured locally); raise it as tests land, never lower it.
+      - name: Run the test suite with coverage
         run: |
           docker run --rm -v "$PWD:/work" -w /work -e TZ=Europe/Paris \
-            nyx_rest:ci python -m unittest discover -s tests
+            nyx_rest:ci sh /work/scripts/ci_test.sh
 
       - name: Show key versions
         run: |

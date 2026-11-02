@@ -1,0 +1,4 @@
+# CI-only dependencies. They never reach the image: the test suite runs inside the image
+# built from Dockerfile7, where everything else (flask, pandas, psycopg2, passlib, ldap3,
+# tzlocal…) is already installed from requirements7.txt.
+coverage==7.17.0

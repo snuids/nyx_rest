@@ -61,6 +61,7 @@ v3.22.0 01/Nov/2026  Configuration bundle: export the platform design and plan/a
 v3.22.1 01/Nov/2026  Authorization: Bearer *** on every route; /healthz and /metrics added
 v3.22.2 01/Nov/2026  Log rollover is serialised between gunicorn workers (no more lost archives)
 v3.22.3 01/Nov/2026  Metrics carry the worker pid, so rate() stops reading the counter as resetting
+v3.22.12 02/Nov/2026  Coverage enters CI: 43 % measured, a floor of 40, and a skip now fails the job
 v3.22.11 02/Nov/2026  pyasn1 0.6.5 (four high Dependabot alerts on the ASN.1 parser)
 v3.22.10 02/Nov/2026  Counters are summed across workers, and the gunicorn logs finally rotate
 v3.22.9 01/Nov/2026  New accounts get a random password and cannot use the API until they change it
