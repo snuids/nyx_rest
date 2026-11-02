@@ -31,7 +31,7 @@ on purpose: the API image installs a pinned requirements file, and pulling in
 import fcntl
 import os
 import time
-from logging.handlers import TimedRotatingFileHandler
+from logging.handlers import RotatingFileHandler, TimedRotatingFileHandler
 
 
 class MultiProcessTimedRotatingFileHandler(TimedRotatingFileHandler):
@@ -70,6 +70,45 @@ class MultiProcessTimedRotatingFileHandler(TimedRotatingFileHandler):
                 pass
             self.stream = None
         self.rolloverAt = self.computeRollover(int(time.time()))
+
+
+class MultiProcessRotatingFileHandler(RotatingFileHandler):
+    """``RotatingFileHandler`` par taille, sûr entre plusieurs processus.
+
+    ``logs/RestAPIG.log`` et ``logs/gunicorn.log`` sont écrits par les trois workers à la fois,
+    sans aucune rotation : 359 Mo et 73 Mo en une journée, jusqu'au jour où le disque se remplit.
+    La rotation par taille se heurte au même problème que la rotation quotidienne — deux workers
+    renomment le même fichier — donc elle réutilise le verrou.
+    """
+
+    def doRollover(self):
+        with self._rollover_lock():
+            try:
+                size = os.stat(self.baseFilename).st_size
+            except FileNotFoundError:
+                self._reopen()          # un autre worker a déjà renommé le fichier
+                return
+            if size < self.maxBytes:
+                self._reopen()          # rotation déjà faite pendant qu'on attendait le verrou
+                return
+            try:
+                super().doRollover()
+            except FileNotFoundError:
+                self._reopen()
+
+    def _reopen(self):
+        if self.stream is not None:
+            try:
+                self.stream.close()
+            except OSError:
+                pass
+            self.stream = None
+        self.stream = self._open()
+
+    def _rollover_lock(self):
+        handle = open(self.baseFilename + ".lock", "a")
+        fcntl.flock(handle, fcntl.LOCK_EX)
+        return _Release(handle)
 
 
 class _Release:

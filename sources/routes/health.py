@@ -17,6 +17,7 @@ from flask_restx import Resource
 from datetime import datetime, timezone
 
 import state
+import metrics_aggregate
 
 logger = logging.getLogger()
 
@@ -114,21 +115,29 @@ def render_metrics():
             broker_detail["lastLifeSignSeconds"],
             "Age of the last life sign published on the broker",
         )
-    # Les compteurs vivent dans le processus : trois workers gunicorn, donc trois valeurs
-    # différentes. Sans label, chaque scrape tombe sur un worker au hasard et la série fait
-    # des dents de scie (34, 28, 31, 39…) que Prometheus interprète comme des remises à zéro :
-    # rate() et increase() renvoient n'importe quoi — c'est ce qui a fait sonner l'alerte de
-    # taux d'erreur à 6 % pour zéro erreur réelle le 01/11. Le label worker rend chaque série
-    # monotone, et sum(rate(...)) au niveau de la règle redevient juste.
-    worker = {"worker": str(os.getpid())}
-    _metric(lines, "nyx_requests_total", state.requests_total, "Authenticated calls served by this worker", "counter", labels=worker)
-    _metric(lines, "nyx_errors_total", state.errors_total, "Calls answered with an error", "counter", labels=worker)
-    _metric(lines, "nyx_active_tokens", len(state.tokens), "Tokens currently cached by this worker", labels=worker)
+    # Les compteurs vivent dans le processus : trois workers gunicorn, donc trois valeurs. Chaque
+    # worker publie les siennes dans Redis, et on expose la somme — sans label, une seule série
+    # exacte. Un label par worker ne suffisait pas : Prometheus réutilise sa connexion HTTP et
+    # n'interroge jamais que le même worker, donc il ne voyait qu'un tiers du trafic.
+    # Repli sur les compteurs locaux si Redis ne répond pas : mieux vaut une valeur partielle
+    # qu'une métrique absente.
+    totals = metrics_aggregate.read_aggregate(state.redisserver) or {}
+    local = metrics_aggregate.snapshot(state)
+    _metric(lines, "nyx_requests_total", totals.get("requests_total", local["requests_total"]),
+            "Authenticated calls served", "counter")
+    _metric(lines, "nyx_errors_total", totals.get("errors_total", local["errors_total"]),
+            "Calls answered with an error", "counter")
+    _metric(lines, "nyx_active_tokens", totals.get("active_tokens", local["active_tokens"]),
+            "Tokens currently cached")
     # Deux compteurs distincts : un mot de passe faux (tentative légitime ou attaque) et une
     # tentative écartée par le garde (attaque en cours). Les confondre rendrait les deux
     # signaux illisibles.
-    _metric(lines, "nyx_auth_failures_total", state.auth_failures_total, "Rejected credentials", "counter", labels=worker)
-    _metric(lines, "nyx_auth_blocked_total", state.auth_blocked_total, "Login attempts refused by the brute-force guard", "counter", labels=worker)
+    _metric(lines, "nyx_auth_failures_total", totals.get("auth_failures_total", local["auth_failures_total"]),
+            "Rejected credentials", "counter")
+    _metric(lines, "nyx_auth_blocked_total", totals.get("auth_blocked_total", local["auth_blocked_total"]),
+            "Login attempts refused by the brute-force guard", "counter")
+    _metric(lines, "nyx_counters_workers", totals.get("workers", 0),
+            "Workers whose counters are included in this scrape")
 
     return "\n".join(lines) + "\n"
 
