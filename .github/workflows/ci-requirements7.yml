@@ -44,6 +44,16 @@ jobs:
       - name: Compile Python sources
         run: docker run --rm nyx_rest:ci python -m compileall -q /opt/sources
 
+      # La suite tourne dans l'image qui vient d'être construite : les dépendances sont déjà
+      # installées là (pandas, psycopg2, pyodbc, passlib), et le dépôt est monté pour que les
+      # tests exercent le code du commit plutôt que la copie figée dans l'image.
+      # Les tests de route se skippent d'eux-mêmes si les dépendances manquent ; ici elles sont
+      # présentes, donc un skip signale une régression, pas un environnement incomplet.
+      - name: Run the test suite
+        run: |
+          docker run --rm -v "$PWD:/work" -w /work -e TZ=Europe/Paris \
+            nyx_rest:ci python -m unittest discover -s tests
+
       - name: Show key versions
         run: |
           docker run --rm -i nyx_rest:ci python - <<'PY'
