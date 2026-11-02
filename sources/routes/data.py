@@ -447,7 +447,7 @@ def register(app, api, name_space):
         # exposes and `nyx_filter` which rows are visible. Leaving them open made the read
         # restriction bypassable in two requests.
         if met in ("post", "delete") and requires_admin_for_write(index) and not is_admin(user):
-            logger.info("index protégé : écriture refusée à un compte non administrateur")
+            logger.info("protected index: write refused for a non-admin account")
             return {'error': "Not Allowed"}
 
         if met == 'get':
@@ -455,7 +455,7 @@ def register(app, api, name_space):
             # requested. Reading by identifier therefore has its own check, otherwise
             # `GET /generic/nyx_user/<other>` returned another account's hash.
             if is_nyx_user_indice(index) and not can_read_nyx_user(user, object):
-                logger.info("nyx_user : lecture d'un autre compte refusée")
+                logger.info("nyx_user: reading another account refused")
                 return {'error': "Not Allowed", "data": None}
             error, ret = fetch_document(state.es, index, object, state.elkversion,
                                         request.args.get("doc_type", "doc"))

@@ -84,7 +84,7 @@ def retry_after(conn, login, ip):
                 worst = max(worst, max(int(conn.ttl(key) or WINDOW), 1))
         return worst
     except Exception:
-        logger.warning("login_guard : Redis injoignable, contrôle ignoré", exc_info=True)
+        logger.warning("login_guard: Redis unreachable, check skipped", exc_info=True)
         return 0
 
 
@@ -100,7 +100,7 @@ def register_failure(conn, login, ip):
                 conn.setex(ban_key(login), seconds, 1)
         return retry_after(conn, login, ip)
     except Exception:
-        logger.warning("login_guard : échec non enregistré", exc_info=True)
+        logger.warning("login_guard: failure not recorded", exc_info=True)
         return 0
 
 
@@ -109,7 +109,7 @@ def reset(conn, login, ip):
     try:
         conn.delete(user_key(login), ip_key(ip), ban_key(login))
     except Exception:
-        logger.warning("login_guard : compteurs non effacés", exc_info=True)
+        logger.warning("login_guard: counters not cleared", exc_info=True)
 
 
 def delay():

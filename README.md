@@ -123,12 +123,23 @@ sees whichever one answers. Sum them (`sum by (instance)`) or scrape each worker
 ## Tests
 
 ```shell
-python -m unittest discover -s tests
+python -m unittest discover -s tests          # bare interpreter: the route tests skip themselves
+sh scripts/ci_test.sh                         # what the CI runs, with coverage and a floor
 ```
 
-`tests/test_config_bundle.py` covers the bundle logic without any dependency.
-`tests/test_config_io.py` runs the real routes through a Flask test client with a fake
-Elasticsearch; it skips itself when Flask is not installed.
+`tests/test_config_bundle.py` covers the bundle logic without any dependency. The route tests
+mount the real Flask application over fake Elasticsearch and fake Redis (`tests/route_harness.py`),
+so they need flask, pandas and the rest of `requirements7.txt` — without them they skip silently,
+which is why the CI fails on any skip.
+
+Coverage is measured by `scripts/ci_test.sh` and gated at 40 % (43 % on 2026-11-02). Raise the
+floor as tests land, never lower it.
+
+## Language
+
+Code, comments, log messages, commit messages, pull requests and documentation are written in
+English, in every NYX repository. Translated user-facing text lives in the interface catalogues
+(`nyx_ui/src/lang/`), not in the API.
 
 ## Run
 

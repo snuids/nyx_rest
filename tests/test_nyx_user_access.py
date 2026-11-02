@@ -183,7 +183,7 @@ class SearchRestrictionTests(unittest.TestCase):
         allowed, result, _ = can_use_indice("nyx_user", user(), query)
         self.assertTrue(allowed)
         self.assertEqual(result["bool"]["must"][0]["query_string"]["query"], "privileges:admin")
-        self.assertEqual(len(filters_of(result)), 1, "le filtre doit être and-é, pas substitué")
+        self.assertEqual(len(filters_of(result)), 1, "the filter must be and-ed, not substituted")
 
     def test_an_existing_filter_list_is_kept_and_completed(self):
         query = {"bool": {"must": [{"match_all": {}}],

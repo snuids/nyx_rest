@@ -79,7 +79,7 @@ class FetchDocumentTest(unittest.TestCase):
         es = FakeES()
         error, doc = self.data.fetch_document(es, "nyx_indice", "inconnu", 8)
         self.assertEqual((error, doc), ("", None))
-        self.assertEqual([c[0] for c in es.calls], ["get"], "aucune recherche ne doit être tentée")
+        self.assertEqual([c[0] for c in es.calls], ["get"], "no search should be attempted")
 
     def test_a_legacy_cluster_keeps_its_doc_type(self):
         es = FakeES({"bob": {"login": "bob"}})

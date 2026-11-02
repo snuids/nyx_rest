@@ -57,7 +57,7 @@ def check_new_password(password, login=""):
     what matters.
     """
     if not password or len(password) < MIN_LENGTH:
-        return f"Le mot de passe doit contenir au moins {MIN_LENGTH} caractères."
+        return f"The password must contain at least {MIN_LENGTH} characters."
     if login and password.lower() == str(login).lower():
-        return "Le mot de passe ne peut pas être identique à l'identifiant."
+        return "The password cannot be the same as the login."
     return ""

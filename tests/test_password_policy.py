@@ -17,7 +17,7 @@ class TemporaryPasswordTest(unittest.TestCase):
     def test_a_generated_password_is_long_and_url_safe(self):
         mot = policy.generate_temporary_password()
         self.assertGreaterEqual(len(mot), 24)
-        self.assertRegex(mot, r"^[A-Za-z0-9_-]+$", "le mot de passe doit être recopiable sans ambiguïté")
+        self.assertRegex(mot, r"^[A-Za-z0-9_-]+$", "the password must be copyable without ambiguity")
 
     def test_two_accounts_never_share_a_password(self):
         """The defect being fixed: one hash common to every account."""
@@ -61,7 +61,7 @@ class NewPasswordTest(unittest.TestCase):
         self.assertIn("12", policy.check_new_password(None))
 
     def test_the_login_itself_is_refused(self):
-        self.assertIn("identifiant", policy.check_new_password("amarchand@icloud.com",
+        self.assertIn("login", policy.check_new_password("amarchand@icloud.com",
                                                                "amarchand@icloud.com"))
 
     def test_a_correct_password_passes(self):

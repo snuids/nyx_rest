@@ -57,7 +57,7 @@ def record_auth_failure(login, ip, reason, user_agent=""):
             # the client actually installed is opensearchpy, which expects body=
             state.es.index(index=index, body=doc)
     except Exception:
-        logger.warning("échec d'authentification non tracé", exc_info=True)
+        logger.warning("authentication failure not recorded", exc_info=True)
 
 
 def setACookie(privilege, privileges, resp, token):
