@@ -13,6 +13,7 @@ from flask import request, jsonify
 from cachetools import cached, TTLCache
 
 import state
+from password_policy import must_change_password
 
 logger = logging.getLogger()
 
@@ -162,6 +163,10 @@ def token_required(*roles):
                 usr = getUserFromToken(request, token)
                 if usr is None:
                     ret = {'error': "UNKNOWN_TOKEN"}
+                elif must_change_password(usr, request.path):
+                    # Mot de passe provisoire : le jeton n'ouvre que le changement de mot de
+                    # passe et la déconnexion. Ce n'est pas une politesse de l'interface.
+                    ret = {'error': "MUST_CHANGE_PASSWORD"}
                 else:
                     ok = False
                     if len(roles) == 0:

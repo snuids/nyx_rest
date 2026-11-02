@@ -449,10 +449,19 @@ def register(app, api, name_space):
                 data = request.data.decode("utf-8")
                 if index == "nyx_user":
                     dataobj = json.loads(data)
-                    if "$pbkdf2-sha256" not in dataobj["password"]:
-                        from passlib.hash import pbkdf2_sha256
-                        dataobj["password"] = pbkdf2_sha256.hash(dataobj["password"])
-                        data = json.dumps(dataobj)
+                    from passlib.hash import pbkdf2_sha256
+                    from password_policy import generate_temporary_password
+                    provided = dataobj.get("password") or ""
+                    if provided and "$pbkdf2-sha256" not in provided:
+                        dataobj["password"] = pbkdf2_sha256.hash(provided)
+                    elif not provided or "$pbkdf2-sha256" in provided:
+                        # Aucun mot de passe utilisable fourni (champ absent, vide, ou condensat
+                        # figé comme celui que l'interface envoyait pour tous les comptes) :
+                        # on en fabrique un que personne ne connaît, et le compte reste fermé
+                        # tant que son propriétaire n'en a pas choisi un.
+                        dataobj["password"] = pbkdf2_sha256.hash(generate_temporary_password())
+                        dataobj["mustResetPassword"] = True
+                    data = json.dumps(dataobj)
                 if state.elkversion >= 7:
                     state.es.index(index=index, body=data, id=object)
                 else:
