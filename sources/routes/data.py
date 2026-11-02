@@ -441,10 +441,11 @@ def register(app, api, name_space):
             logger.info("Index Not Allowed for user.")
             return {'error': "Not Allowed", "records": [], "aggs": []}
 
-        # Écrire dans ces trois indices, c'est s'attribuer des droits : `nyx_user` porte les
+        # Écrire dans ces indices, c'est s'attribuer des droits : `nyx_user` porte les
         # privilèges et les condensats, `nyx_app` décide de ce que chaque écran peut faire,
-        # `nyx_privilege` de ce que chaque rôle peut voir. Les laisser ouverts rendait la
-        # restriction de lecture contournable en deux requêtes.
+        # `nyx_privilege` de ce que chaque rôle peut voir, `nyx_indice` de quelles données
+        # chaque index expose et `nyx_filter` des lignes visibles. Les laisser ouverts rendait
+        # la restriction de lecture contournable en deux requêtes.
         if met in ("post", "delete") and requires_admin_for_write(index) and not is_admin(user):
             logger.info("index protégé : écriture refusée à un compte non administrateur")
             return {'error': "Not Allowed"}
