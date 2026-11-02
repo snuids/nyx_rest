@@ -20,7 +20,9 @@ from middleware import (
     token_required, check_post_parameters, DateTimeEncoder, fingerprint, request_token
 )
 from db_postgres import get_postgres_connection
-from es_helpers import can_use_indice
+from es_helpers import (
+    can_use_indice, is_nyx_user_indice, can_read_nyx_user, requires_admin_for_write, is_admin,
+)
 from es_read import fetch_document, find_user_by_login
 from common import loadData, get_mappings, kibanaData
 from pg_common import loadPGData, getAppByID, get_sql_server_connection
@@ -439,7 +441,21 @@ def register(app, api, name_space):
             logger.info("Index Not Allowed for user.")
             return {'error': "Not Allowed", "records": [], "aggs": []}
 
+        # Écrire dans ces trois indices, c'est s'attribuer des droits : `nyx_user` porte les
+        # privilèges et les condensats, `nyx_app` décide de ce que chaque écran peut faire,
+        # `nyx_privilege` de ce que chaque rôle peut voir. Les laisser ouverts rendait la
+        # restriction de lecture contournable en deux requêtes.
+        if met in ("post", "delete") and requires_admin_for_write(index) and not is_admin(user):
+            logger.info("index protégé : écriture refusée à un compte non administrateur")
+            return {'error': "Not Allowed"}
+
         if met == 'get':
+            # `can_use_indice` ne voit qu'un nom d'index : il ne peut pas dire *quel* document
+            # est demandé. La lecture par identifiant a donc son propre contrôle, sinon
+            # `GET /generic/nyx_user/<autre>` rendait le condensat d'un autre compte.
+            if is_nyx_user_indice(index) and not can_read_nyx_user(user, object):
+                logger.info("nyx_user : lecture d'un autre compte refusée")
+                return {'error': "Not Allowed", "data": None}
             error, ret = fetch_document(state.es, index, object, state.elkversion,
                                         request.args.get("doc_type", "doc"))
             return {'error': error, "data": ret}
