@@ -1,19 +1,18 @@
-"""Garde contre le force brute sur ``POST /api/v1/cred/login``.
+"""Brute-force guard for ``POST /api/v1/cred/login``.
 
-Un mot de passe faux ne laisse aucune trace aujourd'hui : l'appel n'a pas encore de token,
-donc rien n'arrive dans ``nyx_apicalls``. Deux compteurs Redis, un par compte et un par IP,
-pallient ce trou :
+A wrong password leaves no trace today: the call has no token yet, so nothing reaches
+``nyx_apicalls``. Two Redis counters, one per account and one per IP, fill that hole:
 
-* ``loginfail:user:<login>`` — un attaquant peut changer d'IP sans changer de cible ;
-* ``loginfail:ip:<ip>``      — un attaquant peut changer de compte sans changer de source.
+* ``loginfail:user:<login>`` — an attacker can change IP without changing target;
+* ``loginfail:ip:<ip>``      — an attacker can change account without changing source.
 
-Les deux clés vivent ``WINDOW`` secondes. Au-delà de ``MAX_ATTEMPTS``, la route répond 429 le
-temps que la clé expire. Un compte qui franchit les paliers de ``BAN_LADDER`` est gelé plus
-longtemps, mais **jamais définitivement** : un blocage permanent transforme une attaque en
-déni de service contre son propre utilisateur.
+Both keys live for ``WINDOW`` seconds. Past ``MAX_ATTEMPTS``, the route answers 429 for as
+long as the key lasts. An account that crosses the ``BAN_LADDER`` steps is frozen for longer,
+but **never permanently**: a permanent block turns an attack into a denial of service against
+its own user.
 
-Le module est volontairement séparé de la route : les fonctions prennent un client Redis et
-renvoient des entiers, ce qui les rend testables sans Redis ni Flask.
+The module is deliberately kept apart from the route: the functions take a Redis client and
+return integers, which makes them testable without Redis or Flask.
 """
 
 import logging
@@ -22,11 +21,11 @@ import time
 
 logger = logging.getLogger(__name__)
 
-WINDOW = 300                    # fenêtre d'observation, en secondes
-MAX_ATTEMPTS = 5                # tentatives libres avant le premier gel
-BAN_LADDER = ((10, 300), (20, 3600))   # seuil d'échecs -> gel supplémentaire, en secondes
-MIN_FAILURE_DELAY = 0.3         # plancher de réponse en cas d'échec, en secondes
-JITTER = 0.15                   # bruit ajouté, pour brouiller le chronométrage
+WINDOW = 300                    # observation window, in seconds
+MAX_ATTEMPTS = 5                # free attempts before the first freeze
+BAN_LADDER = ((10, 300), (20, 3600))   # failure threshold -> extra freeze, in seconds
+MIN_FAILURE_DELAY = 0.3         # response floor on failure, in seconds
+JITTER = 0.15                   # added noise, to blur the timing
 
 
 def user_key(login):
@@ -42,10 +41,10 @@ def ban_key(login):
 
 
 def client_ip(headers, remote_addr):
-    """IP réelle du client derrière nginx.
+    """Real client IP behind nginx.
 
-    La configuration de prod pose ``X-Real-IP`` (pas ``X-Forwarded-For``) sur ``/api/``.
-    On accepte les deux, dans cet ordre, et on retombe sur la socket.
+    The production configuration sets ``X-Real-IP`` (not ``X-Forwarded-For``) on ``/api/``.
+    Both are accepted, in that order, and we fall back on the socket.
     """
     real = (headers or {}).get("X-Real-IP")
     if real:
@@ -57,22 +56,22 @@ def client_ip(headers, remote_addr):
 
 
 def lock_seconds(attempts):
-    """Gel applicable à un compteur ayant ``attempts`` échecs. Fonction pure."""
+    """Freeze applicable to a counter holding ``attempts`` failures. Pure function."""
     if attempts < MAX_ATTEMPTS:
         return 0
     longest = 0
     for threshold, seconds in BAN_LADDER:
         if attempts >= threshold:
             longest = seconds
-    # entre MAX_ATTEMPTS et le premier palier : on attend l'expiration de la fenêtre
+    # between MAX_ATTEMPTS and the first step: wait for the window to expire
     return longest or WINDOW
 
 
 def retry_after(conn, login, ip):
-    """Secondes à attendre avant de retenter, 0 si l'appel est autorisé.
+    """Seconds to wait before retrying, 0 if the call is allowed.
 
-    Redis indisponible : on laisse passer. Protéger le login ne doit pas fermer la porte
-    à tout le monde quand le cache tombe.
+    Redis unavailable: we let it through. Protecting the login must not close the door on
+    everyone when the cache goes down.
     """
     try:
         ban = conn.ttl(ban_key(login))
@@ -90,7 +89,7 @@ def retry_after(conn, login, ip):
 
 
 def register_failure(conn, login, ip):
-    """Enregistre un échec et renvoie le gel désormais applicable."""
+    """Records a failure and returns the freeze now applicable."""
     try:
         for key in (user_key(login), ip_key(ip)):
             conn.incr(key)
@@ -106,7 +105,7 @@ def register_failure(conn, login, ip):
 
 
 def reset(conn, login, ip):
-    """Efface les compteurs après une authentification réussie."""
+    """Clears the counters after a successful authentication."""
     try:
         conn.delete(user_key(login), ip_key(ip), ban_key(login))
     except Exception:
@@ -114,19 +113,19 @@ def reset(conn, login, ip):
 
 
 def delay():
-    """Délai plancher à opposer à un échec.
+    """Response floor to oppose to a failure.
 
-    ``pbkdf2_sha256`` coûte cher, mais seulement si le compte existe : sans ce plancher
-    la différence de temps de réponse suffit à énumérer les comptes. Le bruit évite que
-    la mesure du plancher lui-même ne redevienne un signal.
+    ``pbkdf2_sha256`` is expensive, but only if the account exists: without this floor the
+    difference in response time is enough to enumerate accounts. The noise keeps the
+    measurement of the floor itself from becoming a signal again.
     """
     time.sleep(MIN_FAILURE_DELAY + random.random() * JITTER)
 
 
 def failure_message():
-    """Message unique pour « compte inconnu » et « mot de passe faux ».
+    """Single message for "unknown account" and "wrong password".
 
-    Deux messages distincts rendent l'énumération gratuite, quel que soit le soin
-    apporté au temps de réponse.
+    Two distinct messages make enumeration free, whatever care is taken over the response
+    time.
     """
     return "Bad Credentials"

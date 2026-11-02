@@ -1,4 +1,4 @@
-"""Tests du garde de login : aucune dépendance à Redis, ni à Flask."""
+"""Tests for the login guard: no dependency on Redis, nor on Flask."""
 
 import sys
 import unittest
@@ -10,7 +10,7 @@ import login_guard as guard
 
 
 class FakeRedis:
-    """Le strict nécessaire de l'API Redis utilisée par le garde, avec une horloge pilotable."""
+    """Strictly what the guard needs from the Redis API, with a controllable clock."""
 
     def __init__(self):
         self.values = {}
@@ -57,7 +57,7 @@ class FakeRedis:
 
 
 class BrokenRedis:
-    """Un Redis qui tombe : le garde doit laisser passer, pas fermer la porte."""
+    """A Redis that goes down: the guard must let through, not close the door."""
 
     def __getattr__(self, name):
         def boom(*args, **kwargs):
@@ -101,7 +101,7 @@ class GuardTest(unittest.TestCase):
 
     def test_a_frozen_account_stays_frozen_after_the_counter_expires(self):
         self.fail_times(20)
-        self.redis.advance(guard.WINDOW + 1)   # la fenêtre retombe…
+        self.redis.advance(guard.WINDOW + 1)   # the window falls back…
         remaining = guard.retry_after(self.redis, "amarchand@icloud.com", "203.0.113.9")
         self.assertGreater(remaining, 3000, "le gel d'une heure doit survivre à la fenêtre de 5 min")
         self.assertLessEqual(remaining, 3600)
@@ -112,16 +112,16 @@ class GuardTest(unittest.TestCase):
         self.assertEqual(guard.retry_after(self.redis, "amarchand@icloud.com", "203.0.113.9"), 0)
 
     def test_the_ip_counter_catches_username_spraying(self):
-        """Changer de login à chaque essai ne doit pas rendre l'attaque gratuite."""
+        """Changing login on every attempt must not make the attack free."""
         for attempt in range(guard.MAX_ATTEMPTS):
             guard.register_failure(self.redis, f"victime{attempt}@icloud.com", "198.51.100.7")
         wait = guard.retry_after(self.redis, "encore-un-autre@icloud.com", "198.51.100.7")
         self.assertGreater(wait, 0)
-        # … tandis qu'une autre source n'est pas pénalisée
+        # … while another source is not penalised
         self.assertEqual(guard.retry_after(self.redis, "voisin@icloud.com", "198.51.100.8"), 0)
 
     def test_an_unknown_login_is_counted_too(self):
-        """Sinon l'attaquant énumère gratuitement les comptes existants."""
+        """Otherwise the attacker enumerates the existing accounts for free."""
         self.fail_times(guard.MAX_ATTEMPTS, login="inconnu@icloud.com")
         self.assertGreater(guard.retry_after(self.redis, "inconnu@icloud.com", "203.0.113.9"), 0)
 
@@ -132,7 +132,7 @@ class GuardTest(unittest.TestCase):
     def test_redis_down_means_open_door_not_locked_out(self):
         self.assertEqual(guard.retry_after(BrokenRedis(), "amarchand@icloud.com", "203.0.113.9"), 0)
         self.assertEqual(guard.register_failure(BrokenRedis(), "a@b.c", "203.0.113.9"), 0)
-        guard.reset(BrokenRedis(), "a@b.c", "203.0.113.9")   # ne lève pas
+        guard.reset(BrokenRedis(), "a@b.c", "203.0.113.9")   # does not raise
 
     def test_client_ip_prefers_the_real_ip_header(self):
         self.assertEqual(
@@ -149,7 +149,7 @@ class GuardTest(unittest.TestCase):
         self.assertGreater(guard.lock_seconds(5), 0)
 
     def test_a_failure_costs_a_visible_floor_of_time(self):
-        """Le plancher de réponse empêche de distinguer un compte existant d'un inconnu."""
+        """The response floor prevents telling an existing account from an unknown one."""
         import time
         start = time.monotonic()
         guard.delay()
@@ -157,7 +157,7 @@ class GuardTest(unittest.TestCase):
         self.assertGreaterEqual(elapsed, guard.MIN_FAILURE_DELAY)
 
     def test_both_failure_cases_share_one_message(self):
-        """« compte inconnu » et « mot de passe faux » doivent être indiscernables."""
+        """An unknown account and a wrong password must be indistinguishable."""
         self.assertEqual(guard.failure_message(), "Bad Credentials")
 
 

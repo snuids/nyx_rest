@@ -65,12 +65,11 @@ def get_translated_item(language, area, item):
 
 NYX_USER_ROOTS = ("nyx_user", "reindexed-nyx_user")
 
-# Indices dont un compte ordinaire ne doit pas pouvoir écrire : ils portent des droits, pas
-# des données. `nyx_user` contient les privilèges et les condensats, `nyx_app` décide de ce
-# que chaque écran peut faire et `nyx_privilege` de ce que chaque rôle peut voir.
-# `nyx_indice` (les règles d'accès appliquées aux indices de données) et `nyx_filter` (le
-# catalogue de filtres) décident qui voit quoi : les réécrire revenait à s'ouvrir un index
-# interdit sans toucher à `nyx_privilege`.
+# Indices an ordinary account must not be able to write to: they carry rights, not data.
+# `nyx_user` holds the privileges and the password hashes, `nyx_app` decides what each
+# screen may do and `nyx_privilege` what each role may see. `nyx_indice` (the access rules
+# applied to data indices) and `nyx_filter` (the filter catalogue) decide who sees what:
+# rewriting them amounted to opening a forbidden index without touching `nyx_privilege`.
 ADMIN_WRITE_ROOTS = (
     "nyx_user", "reindexed-nyx_user",
     "nyx_app", "reindexed-nyx_app",
@@ -86,13 +85,13 @@ def has_wildcard(name):
 
 
 def expression_reaches(expression, root):
-    """Vrai si cette expression d'index peut désigner l'index `root`.
+    """True if this index expression may designate the `root` index.
 
-    Trois orthographes mènent au même index et doivent être traitées pareil : le nom exact
-    (`nyx_user`), l'alias de réindexation (`reindexed-nyx_user-v8`, suffixe après `-` ou `.`)
-    et le motif (`nyx_user*`, `nyx_*`, `*`). Un motif est comparé par préfixe : dès qu'il peut
-    recouvrir la racine, on le considère comme visant l'index — `nyx_apicalls*` n'est pas
-    concerné, `nyx_*` l'est.
+    Three spellings lead to the same index and must be treated alike: the exact name
+    (`nyx_user`), the reindexing alias (`reindexed-nyx_user-v8`, suffix after `-` or `.`)
+    and the pattern (`nyx_user*`, `nyx_*`, `*`). A pattern is compared by prefix: as soon
+    as it may cover the root, it is considered to target the index — `nyx_apicalls*` is
+    not concerned, `nyx_*` is.
     """
     name = str(expression or "").lower()
     if not name:
@@ -104,17 +103,17 @@ def expression_reaches(expression, root):
 
 
 def is_nyx_user_indice(indice):
-    """`nyx_user`, son alias de réindexation, ou un motif qui peut le ramener.
+    """`nyx_user`, its reindexing alias, or a pattern that may bring it back.
 
-    Le nom exact ne suffit pas : `generic_search/nyx_user*` est utilisé par l'interface pour
-    lister les comptes, et un motif plus large (`nyx_*`, `*`) ramène l'index lui aussi. Les
-    laisser passer revenait à contourner la restriction par l'orthographe de l'index.
+    The exact name is not enough: `generic_search/nyx_user*` is used by the interface to
+    list accounts, and a wider pattern (`nyx_*`, `*`) brings the index back too. Letting
+    them through amounted to bypassing the restriction through the spelling of the index.
     """
     return any(expression_reaches(indice, root) for root in NYX_USER_ROOTS)
 
 
 def requires_admin_for_write(indice):
-    """Vrai pour les indices de configuration et de comptes, réservés à l'écriture admin."""
+    """True for the configuration and account indices, reserved for admin writes."""
     return any(expression_reaches(indice, root) for root in ADMIN_WRITE_ROOTS)
 
 
@@ -123,11 +122,11 @@ def is_admin(user):
 
 
 def own_account_ids(user):
-    """Identifiants sous lesquels ce compte peut apparaître dans `nyx_user`.
+    """Identifiers under which this account may appear in `nyx_user`.
 
-    Huit comptes portent leur e-mail en `_id` et un nom court en `login` : se restreindre au
-    seul `_id` rendrait un utilisateur incapable de lire sa propre fiche, et le formulaire de
-    changement de mot de passe avec elle.
+    Eight accounts carry their e-mail in `_id` and a short name in `login`: restricting the
+    lookup to `_id` alone would leave a user unable to read their own record, and the
+    password change form with it.
     """
     ids = []
     for key in ("id", "login"):
@@ -138,7 +137,7 @@ def own_account_ids(user):
 
 
 def nyx_user_read_filter(user):
-    """Clause « son propre compte ». `None` quand le jeton ne porte aucune identité."""
+    """The "own account" clause. `None` when the token carries no identity."""
     ids = own_account_ids(user)
     if not ids:
         return None
@@ -154,7 +153,7 @@ def nyx_user_read_filter(user):
 
 
 def can_read_nyx_user(user, object_id):
-    """Vrai si `user` a le droit de lire le document `object_id` de `nyx_user`."""
+    """True if `user` is allowed to read the `object_id` document of `nyx_user`."""
     if is_admin(user):
         return True
     return str(object_id) in own_account_ids(user)
@@ -197,12 +196,12 @@ def can_use_indice(indice, user, query):
 
     resultsmustbefiltered = None
 
-    # Un compte ordinaire ne lit que sa propre fiche dans `nyx_user`. L'index contient les
-    # condensats pbkdf2 de tout le monde : les laisser lisibles par un compte à simple tag
-    # d'application revient à publier les mots de passe de la plateforme. La restriction est
-    # posée ici, avant la boucle de règles, pour couvrir d'un coup `generic_search`,
-    # `queryFilter` et les exports — et pour survivre aux retours anticipés des branches
-    # `filtercolumn` / `privileges`, qui réécrivent la `query_string` mais pas `bool.filter`.
+    # An ordinary account only reads its own record in `nyx_user`. The index holds
+    # everyone's pbkdf2 hashes: leaving them readable by an account with a mere application
+    # tag amounts to publishing the platform's passwords. The restriction is placed here,
+    # before the rule loop, to cover `generic_search`, `queryFilter` and the exports in one
+    # go — and to survive the early returns of the `filtercolumn` / `privileges` branches,
+    # which rewrite the `query_string` but not `bool.filter`.
     if is_nyx_user_indice(indice) and not is_admin(user):
         own = nyx_user_read_filter(user)
         if own is None:
@@ -296,8 +295,8 @@ def handleAPICalls():
                         messagebody += json.dumps(action) + "\r\n"
                         messagebody += json.dumps(api_entry) + "\r\n"
                     state.es.bulk(messagebody)
-            # Chaque worker publie ses compteurs : /metrics les additionne ensuite. La boucle
-            # existe déjà (un cycle toutes les 5 s), donc aucun thread supplémentaire.
+            # Each worker publishes its counters: /metrics adds them up afterwards. The
+            # loop already exists (one cycle every 5 s), so no extra thread.
             metrics_aggregate.publish(state.redisserver, os.getpid(),
                                       metrics_aggregate.snapshot(state))
             if state.conn is not None:

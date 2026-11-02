@@ -1,12 +1,12 @@
-"""Lecture d'un document par identifiant.
+"""Reading a document by identifier.
 
-Ce module ne dépend ni de Flask ni du client Elasticsearch : il prend un objet `es` et renvoie
-un couple `(erreur, document)`. C'est ce qui le rend testable avec un faux client, sans monter
-d'application ni installer pandas.
+This module depends on neither Flask nor the Elasticsearch client: it takes an `es` object and
+returns an `(error, document)` pair. That is what makes it testable with a fake client, without
+mounting an application or installing pandas.
 
-Il existe parce qu'un document absent n'est pas une panne : la création d'un utilisateur commence
-par un GET sur son futur identifiant, et répondre « unable to get data » y faisait entrer une
-opération normale dans le compteur d'erreurs de l'API.
+It exists because a missing document is not an outage: creating a user starts with a GET on
+their future identifier, and answering "unable to get data" there pushed a normal operation
+into the API's error counter.
 """
 
 import logging
@@ -15,17 +15,18 @@ logger = logging.getLogger(__name__)
 
 
 def is_not_found(exc):
-    """Vrai si l'exception traduit un document absent, et non une panne."""
+    """True if the exception reflects a missing document, and not an outage."""
     return (getattr(exc, "status_code", None) == 404
             or type(exc).__name__ == "NotFoundError")
 
 def find_user_by_login(es, login, elkversion):
-    """Retrouve un utilisateur par son login quand son _id ne le vaut pas.
+    """Finds a user by login when their _id does not hold it.
 
-    Huit comptes de la prod sont indexés sous leur adresse e-mail alors que leur champ
-    `login` porte un nom court (`amarchand@icloud.com` -> `amarchand`). Sans ce repli,
-    ces comptes sont introuvables par login — et l'interface, qui vérifie la disponibilité
-    d'un e-mail avant de créer un compte, en conclut qu'il est libre et en crée un doublon.
+    Eight production accounts are indexed under their e-mail address while their `login`
+    field carries a short name (`amarchand@icloud.com` -> `amarchand`). Without this
+    fallback those accounts cannot be found by login — and the interface, which checks
+    whether an e-mail is available before creating an account, concludes it is free and
+    creates a duplicate.
     """
     body = {"size": 1, "query": {"term": {"login.keyword": str(login).lower()}}}
     try:
@@ -40,12 +41,12 @@ def find_user_by_login(es, login, elkversion):
     return hits[0] if hits else None
 
 def fetch_document(es, index, object_id, elkversion, doc_type="doc"):
-    """Lit un document par identifiant. Un document absent n'est pas une erreur d'API.
+    """Reads a document by identifier. A missing document is not an API error.
 
-    La création d'un utilisateur commence par un GET sur son futur identifiant : le
-    document n'existe évidemment pas encore, et l'interface s'appuie sur cette absence
-    pour autoriser la création. Répondre « unable to get data » faisait donc entrer une
-    opération normale dans le compteur d'erreurs — trois par création de compte.
+    Creating a user starts with a GET on their future identifier: the document obviously
+    does not exist yet, and the interface relies on that absence to allow the creation.
+    Answering "unable to get data" therefore pushed a normal operation into the error
+    counter — three per account creation.
     """
     try:
         if elkversion >= 7:

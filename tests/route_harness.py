@@ -1,20 +1,20 @@
-"""Harnais de test des routes : vraie application Flask, faux cluster.
+"""Test harness for the routes: a real Flask application, a fake cluster.
 
-La suite du dépôt teste la logique extraite (`login_guard`, `can_use_indice`,
-`config_bundle`, `es_read`…) mais aucune route : `sources/routes/data.py`,
-`sources/routes/auth.py` et `sources/routes/files.py` étaient à **0 %** de couverture, donc les
-gardes d'accès posées en 3.22.12 (lecture limitée au compte, écriture admin-only) et le bridage
-du premier login n'étaient protégés par aucun test du dépôt — seulement par des vérifications
-manuelles qui ne survivent pas à la session.
+The repository suite tests the extracted logic (`login_guard`, `can_use_indice`,
+`config_bundle`, `es_read`…) but no route: `sources/routes/data.py`,
+`sources/routes/auth.py` and `sources/routes/files.py` were at **0 %** coverage, so the
+access guards added in 3.22.12 (read limited to one's own account, writing admins only) and
+the throttling of the first login were protected by no test in the repository — only by
+manual checks that do not survive the session.
 
-Ce module monte une application Flask + flask-restx réelle, enregistre les modules de route
-demandés, et remplace leurs collaborateurs (Elasticsearch, Redis, broker) par des doublures qui
-journalisent les appels. Le but n'est pas de tester la logique métier — elle a déjà ses tests —
-mais le **câblage** : qui a le droit d'appeler quoi, avec quel corps de requête, et qu'est-ce qui
-part vers le cluster.
+This module mounts a real Flask + flask-restx application, registers the requested route
+modules, and replaces their collaborators (Elasticsearch, Redis, broker) with doubles that
+log the calls. The goal is not to test the business logic — it already has its tests — but
+the **wiring**: who is allowed to call what, with which request body, and what is sent to
+the cluster.
 
-Les modules de route importent pandas, dateutil, psycopg2, pyodbc : la suite doit continuer de
-tourner sur un interpréteur nu, donc les classes de test sont `skipUnless` (convention du dépôt).
+The route modules import pandas, dateutil, psycopg2, pyodbc: the suite must keep running on
+a bare interpreter, so the test classes are `skipUnless` (repository convention).
 """
 
 import copy
@@ -28,7 +28,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "sources"))
 
-try:                                    # dépendances complètes : harnais utilisable
+try:                                    # full dependencies: harness usable
     import flask                                                    # noqa: F401
     import flask_restx                                              # noqa: F401
     import pandas                                                   # noqa: F401
@@ -37,22 +37,22 @@ try:                                    # dépendances complètes : harnais util
     import psycopg2                                                 # noqa: F401
     HAVE_ROUTE_DEPS = True
     DEPS_MISSING = ""
-except Exception as exc:                # ImportError, mais aussi erreurs d'import binaires
+except Exception as exc:                # ImportError, but also binary import errors
     HAVE_ROUTE_DEPS = False
     DEPS_MISSING = type(exc).__name__ + ": " + str(exc)[:80]
 
 
 class NotFound(Exception):
-    """Comme opensearchpy : un document absent, pas une panne."""
+    """Like opensearchpy: a missing document, not an outage."""
     status_code = 404
 
 
 class FakeES:
-    """Doublure du client Elasticsearch, index par nom, appels journalisés.
+    """Double of the Elasticsearch client, index by name, calls logged.
 
-    `search` renvoie les documents de l'index demandé sans évaluer la requête : les tests qui
-    portent sur les droits vérifient donc le **corps envoyé** (`es.searches`), pas le résultat.
-    Un faux cluster qui filtrerait à la place du vrai donnerait une fausse assurance.
+    `search` returns the documents of the requested index without evaluating the query: the
+    tests that bear on the rights therefore check the **body sent** (`es.searches`), not the
+    result. A fake cluster that filtered in place of the real one would give false assurance.
     """
 
     def __init__(self, docs=None, foreign_hits=None):
@@ -63,14 +63,14 @@ class FakeES:
         self.deleted = []
         self.searches = []
 
-    # -- lecture ---------------------------------------------------------
+    # -- reading ---------------------------------------------------------
     def get(self, index=None, id=None, doc_type=None, **kwargs):
         self.calls.append(("get", index, id))
         source = (self.docs.get(index) or {}).get(id)
         if source is None:
             raise NotFound(f"{index}/{id}")
-        # copie : un vrai client deserialise le JSON, donc le code appelant ne peut pas
-        # modifier nos fixtures (`finalize_login` met le champ password a vide sur le document)
+        # copy: a real client deserialises the JSON, so the calling code cannot modify our
+        # fixtures (`finalize_login` sets the password field to empty on the document)
         return {"_id": id, "_index": index, "_source": copy.deepcopy(source)}
 
     def search(self, index=None, body=None, doc_type=None, size=None, **kwargs):
@@ -86,14 +86,14 @@ class FakeES:
                 "aggregations": {}}
 
     def info(self, **kwargs):
-        # `common.get_es_info` appelle es.info(request_timeout=5)
+        # `common.get_es_info` calls es.info(request_timeout=5)
         return {"version": {"number": "8.19.23"}}
 
     def msearch(self, body, **kwargs):
         self.calls.append(("msearch", None, body))
         return {"responses": []}
 
-    # -- écriture --------------------------------------------------------
+    # -- writing ---------------------------------------------------------
     def index(self, index=None, body=None, id=None, doc_type=None, **kwargs):
         parsed = body
         if isinstance(body, str):
@@ -101,8 +101,8 @@ class FakeES:
                 parsed = json.loads(body)
             except ValueError:
                 parsed = body
-        # `written` garde le corps analysé : la route envoie `json.dumps(...)`, et les tests
-        # assertent sur les champs (condensat, drapeau), pas sur la sérialisation.
+        # `written` keeps the parsed body: the route sends `json.dumps(...)`, and the tests
+        # assert on the fields (hash, flag), not on the serialisation.
         self.written.append((index, id, parsed))
         self.docs.setdefault(index, {})[id] = copy.deepcopy(parsed)
         return {"result": "created", "_id": id}
@@ -112,7 +112,7 @@ class FakeES:
         (self.docs.get(index) or {}).pop(id, None)
         return {"result": "deleted"}
 
-    # -- helpers de test -------------------------------------------------
+    # -- test helpers -------------------------------------------------
     def written_on(self, index):
         return [(doc_id, body) for idx, doc_id, body in self.written if idx == index]
 
@@ -130,10 +130,10 @@ class FakeES:
 
 
 class FakeRedis:
-    """Doublure de redis-py : les clés, les compteurs du garde, et les TTL demandés.
+    """Double of redis-py: the keys, the guard counters, and the requested TTLs.
 
-    `get` renvoie des `bytes` comme le vrai client (créé sans `decode_responses`) : c'est ce que
-    le code reçoit, donc le code doit être exercé avec ça.
+    `get` returns `bytes` like the real client (created without `decode_responses`): that is
+    what the code receives, so the code must be exercised with it.
     """
 
     def __init__(self):
@@ -187,7 +187,7 @@ class FakeRedis:
 
 
 class FakeBroker:
-    """Doublure du client ActiveMQ : on journalise ce qui partirait sur le broker."""
+    """Double of the ActiveMQ client: we log what would leave for the broker."""
 
     def __init__(self):
         self.messages = []
@@ -202,10 +202,10 @@ class FakeBroker:
 
 @unittest.skipUnless(HAVE_ROUTE_DEPS, "dépendances de route absentes (" + DEPS_MISSING + ")")
 class RouteTestCase(unittest.TestCase):
-    """Base des tests de route : fakes installés, application montée, `state` restauré.
+    """Base of the route tests: fakes installed, application mounted, `state` restored.
 
-    Sous-classes : renseigner `route_modules`, `documents` (index -> {id: source}) et
-    `foreign_hits` au besoin, puis utiliser `call()` et `login_as()`.
+    Subclasses: fill in `route_modules`, `documents` (index -> {id: source}) and
+    `foreign_hits` as needed, then use `call()` and `login_as()`.
     """
 
     route_modules = ()
@@ -248,8 +248,8 @@ class RouteTestCase(unittest.TestCase):
         api = Api(self.app)
         namespace = api.namespace("api/v1")
         for module in self.route_modules:
-            # `routes/auth.py` enregistre sur l'`api` seul ; les autres prennent l'application
-            # Flask en premier. On regarde le premier paramètre plutôt que de le supposer.
+            # `routes/auth.py` registers on `api` alone; the others take the Flask
+            # application first. We look at the first parameter rather than assume it.
             first = list(inspect.signature(module.register).parameters)[:1]
             if first == ["app"]:
                 module.register(self.app, api, namespace)
@@ -259,13 +259,13 @@ class RouteTestCase(unittest.TestCase):
 
     # -- infrastructure --------------------------------------------------
     def _install(self, name, value):
-        """Pose un attribut de `state` et le restaure en fin de test."""
+        """Sets an attribute of `state` and restores it at the end of the test."""
         self._saved[name] = getattr(self.state, name)
         setattr(self.state, name, value)
         self.addCleanup(setattr, self.state, name, self._saved[name])
 
     def login_as(self, login, privileges, **extra):
-        """Crée un jeton valide en mémoire et dans le faux Redis, comme le ferait un login."""
+        """Creates a valid token in memory and in the fake Redis, as a login would."""
         token = str(uuid.uuid4())
         payload = {"login": login, "id": login, "privileges": list(privileges),
                    "mustResetPassword": False, "language": "en", "filters": []}
@@ -287,12 +287,12 @@ class RouteTestCase(unittest.TestCase):
         return response.status_code, response.get_json(), response
 
     def capture_load_data(self, module):
-        """Intercepte `loadData` du module de route et retient la requête produite.
+        """Intercepts `loadData` of the route module and keeps the query produced.
 
-        `loadData` est le moteur d'export (scroll, agrégations, privilèges, CSV) : il mérite ses
-        propres tests, et le faire tourner ici obligerait à simuler tout le protocole de scroll
-        pour n'observer qu'une chose — la query que la route lui confie. On garde donc la
-        frontière : la route calcule, `loadData` exécute.
+        `loadData` is the export engine (scroll, aggregations, privileges, CSV): it deserves
+        its own tests, and running it here would force us to simulate the whole scroll
+        protocol just to observe one thing — the query the route hands to it. So we keep the
+        boundary: the route computes, `loadData` executes.
         """
         captured = {"index": None, "query": None, "calls": 0}
         original = module.loadData

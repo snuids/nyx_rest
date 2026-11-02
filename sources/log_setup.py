@@ -73,12 +73,12 @@ class MultiProcessTimedRotatingFileHandler(TimedRotatingFileHandler):
 
 
 class MultiProcessRotatingFileHandler(RotatingFileHandler):
-    """``RotatingFileHandler`` par taille, sûr entre plusieurs processus.
+    """``RotatingFileHandler`` by size, safe across several processes.
 
-    ``logs/RestAPIG.log`` et ``logs/gunicorn.log`` sont écrits par les trois workers à la fois,
-    sans aucune rotation : 359 Mo et 73 Mo en une journée, jusqu'au jour où le disque se remplit.
-    La rotation par taille se heurte au même problème que la rotation quotidienne — deux workers
-    renomment le même fichier — donc elle réutilise le verrou.
+    ``logs/RestAPIG.log`` and ``logs/gunicorn.log`` are written by the three workers at once,
+    with no rotation at all: 359 MB and 73 MB in a single day, until the day the disk fills up.
+    Size-based rotation runs into the same problem as daily rotation — two workers renaming
+    the same file — so it reuses the lock.
     """
 
     def doRollover(self):
@@ -86,10 +86,10 @@ class MultiProcessRotatingFileHandler(RotatingFileHandler):
             try:
                 size = os.stat(self.baseFilename).st_size
             except FileNotFoundError:
-                self._reopen()          # un autre worker a déjà renommé le fichier
+                self._reopen()          # another worker has already renamed the file
                 return
             if size < self.maxBytes:
-                self._reopen()          # rotation déjà faite pendant qu'on attendait le verrou
+                self._reopen()          # rotation already done while we waited for the lock
                 return
             try:
                 super().doRollover()

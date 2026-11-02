@@ -1,8 +1,8 @@
-"""Lecture d'un document par identifiant : un absent n'est pas une erreur.
+"""Reading a document by identifier: an absent one is not an error.
 
-C'est le chemin qu'emprunte la création d'un utilisateur dans l'interface : avant d'ouvrir le
-formulaire, elle demande au serveur si l'adresse est libre. Un 404 y est donc une réponse
-attendue, pas un incident — et pourtant il entrait dans le compteur d'erreurs.
+This is the path user creation takes in the interface: before opening the form, it asks the
+server whether the address is free. A 404 there is therefore an expected answer, not an
+incident — and yet it went into the error counter.
 """
 
 import sys
@@ -13,7 +13,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "sources"))
 
 
 class NotFoundError(Exception):
-    """Reproduit l'exception du client (opensearchpy et elasticsearch-py la nomment pareil)."""
+    """Reproduces the client exception (opensearchpy and elasticsearch-py name it the same)."""
     status_code = 404
 
 
@@ -43,7 +43,7 @@ class FakeES:
 
 class FetchDocumentTest(unittest.TestCase):
     def setUp(self):
-        import es_read   # noqa: E402  (le chemin est posé plus haut)
+        import es_read   # noqa: E402  (the path is set above)
         self.data = es_read
 
     def test_a_present_document_is_returned(self):
@@ -53,7 +53,7 @@ class FetchDocumentTest(unittest.TestCase):
         self.assertEqual(doc["_id"], "bob@example.com")
 
     def test_a_missing_document_is_not_an_error(self):
-        """Le cœur du défaut : trois « erreurs » par création de compte, toutes des 404."""
+        """The heart of the defect: three "errors" per account creation, all of them 404s."""
         es = FakeES()
         error, doc = self.data.fetch_document(es, "nyx_user", "nouveau@example.com", 8)
         self.assertEqual(error, "", "un document absent ne doit pas remplir le compteur d'erreurs")
@@ -66,7 +66,8 @@ class FetchDocumentTest(unittest.TestCase):
         self.assertIsNone(doc)
 
     def test_a_user_indexed_under_another_id_is_found_by_login(self):
-        """Huit comptes : e-mail en _id, nom court en `login`. Sans ce repli, doublon possible."""
+        """Eight accounts: e-mail in _id, short name in `login`. Without that fallback, a
+        duplicate is possible."""
         es = FakeES(search_hits=[{"_id": "amarchand", "_index": "nyx_user",
                                   "_source": {"login": "amarchand"}}])
         error, doc = self.data.fetch_document(es, "nyx_user", "amarchand", 8)

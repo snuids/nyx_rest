@@ -34,10 +34,10 @@ logger = logging.getLogger()
 
 
 def record_auth_failure(login, ip, reason, user_agent=""):
-    """Trace un échec d'authentification dans ``nyx_authfail``.
+    """Records an authentication failure in ``nyx_authfail``.
 
-    Sans cette trace, une attaque par force brute est invisible : l'appel n'a pas encore de
-    token, donc il n'apparaît ni dans ``nyx_apicalls`` ni dans les métriques applicatives.
+    Without that record, a brute-force attack is invisible: the call has no token yet, so it
+    appears neither in ``nyx_apicalls`` nor in the application metrics.
     """
     try:
         doc = {
@@ -47,14 +47,14 @@ def record_auth_failure(login, ip, reason, user_agent=""):
             "reason": reason,
             "user_agent": (user_agent or "")[:300],
         }
-        # Index daté, comme nyx_apicalls : le curator expirera au-delà de sept jours. Un
-        # login tenté, une IP et un User-Agent sont des données personnelles ; elles ne
-        # doivent pas survivre indéfiniment dans un index unique qui ne cesse de grossir.
+        # Dated index, like nyx_apicalls: the curator expires it beyond seven days. An
+        # attempted login, an IP and a User-Agent are personal data; they must not survive
+        # indefinitely in a single index that keeps on growing.
         index = "nyx_authfail-" + datetime.utcnow().strftime("%Y.%m.%d")
         try:
             state.es.index(index=index, document=doc)        # elasticsearch-py 8
         except TypeError:
-            # le client réellement installé est opensearchpy, qui attend body=
+            # the client actually installed is opensearchpy, which expects body=
             state.es.index(index=index, body=doc)
     except Exception:
         logger.warning("échec d'authentification non tracé", exc_info=True)
@@ -281,9 +281,9 @@ def register(api, name_space):
             if ("login" in data) and ("password" in data):
                 cleanlogin = data["login"].split(">")[0]
 
-                # Force brute : compteurs Redis (compte + IP) consultés avant toute
-                # vérification de mot de passe, pour qu'un refus coûte une requête et non
-                # un calcul pbkdf2 — et qu'un attaquant ne puisse pas saturer les workers.
+                # Brute force: Redis counters (account + IP) checked before any password
+                # verification, so that a refusal costs one request and not a pbkdf2
+                # computation — and an attacker cannot saturate the workers.
                 ip = guard.client_ip(request.headers, request.remote_addr)
                 wait = guard.retry_after(state.redisserver, cleanlogin, ip)
                 if wait > 0:
@@ -337,8 +337,8 @@ def register(api, name_space):
                             if not verify_double_code(
                                 state.redisserver, data["login"], data["doublecode"]
                             ):
-                                # Un code à cinq chiffres se devine : l'erreur de second
-                                # facteur compte comme un échec, pas comme un incident.
+                                # A five-digit code can be guessed: the second factor
+                                # error counts as a failure, not as an incident.
                                 guard.register_failure(state.redisserver, cleanlogin, ip)
                                 state.auth_failures_total += 1
                                 record_auth_failure(cleanlogin, ip, "DOUBLE_PHASE",
@@ -399,8 +399,8 @@ def register(api, name_space):
                         state.auth_failures_total += 1
                         record_auth_failure(cleanlogin, ip, "BAD_CREDENTIALS",
                                             request.headers.get("User-Agent"))
-                        # Le plancher de temps rend indiscernables « compte inconnu » et
-                        # « mot de passe faux », quel que soit le chemin pris (local ou AD).
+                        # The time floor makes "unknown account" and "wrong password"
+                        # indistinguishable, whichever path is taken (local or AD).
                         guard.delay()
                         return jsonify({'error': guard.failure_message()})
 
@@ -450,8 +450,8 @@ def register(api, name_space):
                 return {"error": "usernotfound"}
 
             usrdb["_source"]["password"] = pbkdf2_sha256.hash(req["new_password"])
-            # Un mot de passe posé par un administrateur est provisoire : son titulaire doit
-            # en choisir un à sa première connexion.
+            # A password set by an administrator is provisional: its holder must choose
+            # one at their first login.
             usrdb["_source"]["mustResetPassword"] = True
             if state.elkversion >= 7:
                 state.es.index(index="nyx_user", body=usrdb["_source"], id=req["login"])
@@ -505,9 +505,9 @@ def register(api, name_space):
                     res = state.es.index(index="nyx_user", body=usrdb["_source"],
                                          doc_type="doc", id=user["id"])
                 logger.info(res)
-                # Le jeton en cours cesse d'être bridé : on met à jour les deux copies
-                # (mémoire du worker et Redis), sinon l'utilisateur reste bloqué jusqu'à
-                # la reconnexion.
+                # The current token stops being throttled: both copies are updated (worker
+                # memory and Redis), otherwise the user stays blocked until they log in
+                # again.
                 token, _ = request_token(request)
                 if token:
                     with state.tokenlock:

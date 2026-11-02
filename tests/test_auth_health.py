@@ -232,9 +232,9 @@ class RouteTests(unittest.TestCase):
         self.assertIn("# TYPE nyx_requests_total counter", body)
 
     def test_metrics_sums_what_every_worker_published(self):
-        """Prometheus ne voyait qu'un worker sur trois : /metrics additionne ce que Redis contient."""
+        """Prometheus only saw one worker out of three: /metrics adds up what Redis holds."""
         now = int(datetime.now().timestamp())
-        state.requests_total = 999          # valeur locale : elle ne doit pas être exposée seule
+        state.requests_total = 999          # local value: it must not be exposed on its own
         state.errors_total = 999
         state.redisserver = FakeRedis(entries={
             "7": json.dumps({"at": now, "requests_total": 10, "errors_total": 1}),

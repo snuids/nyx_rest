@@ -115,12 +115,13 @@ def render_metrics():
             broker_detail["lastLifeSignSeconds"],
             "Age of the last life sign published on the broker",
         )
-    # Les compteurs vivent dans le processus : trois workers gunicorn, donc trois valeurs. Chaque
-    # worker publie les siennes dans Redis, et on expose la somme — sans label, une seule série
-    # exacte. Un label par worker ne suffisait pas : Prometheus réutilise sa connexion HTTP et
-    # n'interroge jamais que le même worker, donc il ne voyait qu'un tiers du trafic.
-    # Repli sur les compteurs locaux si Redis ne répond pas : mieux vaut une valeur partielle
-    # qu'une métrique absente.
+    # The counters live in the process: three gunicorn workers, hence three values. Each
+    # worker publishes its own into Redis, and we expose the sum — without a label, a single
+    # accurate series. A label per worker was not enough: Prometheus reuses its HTTP
+    # connection and never queries anything but the same worker, so it saw only a third of
+    # the traffic.
+    # Fallback on the local counters if Redis does not answer: a partial value is better
+    # than a missing metric.
     totals = metrics_aggregate.read_aggregate(state.redisserver) or {}
     local = metrics_aggregate.snapshot(state)
     _metric(lines, "nyx_requests_total", totals.get("requests_total", local["requests_total"]),
@@ -129,9 +130,9 @@ def render_metrics():
             "Calls answered with an error", "counter")
     _metric(lines, "nyx_active_tokens", totals.get("active_tokens", local["active_tokens"]),
             "Tokens currently cached")
-    # Deux compteurs distincts : un mot de passe faux (tentative légitime ou attaque) et une
-    # tentative écartée par le garde (attaque en cours). Les confondre rendrait les deux
-    # signaux illisibles.
+    # Two distinct counters: a wrong password (legitimate attempt or attack) and an attempt
+    # turned away by the guard (attack in progress). Confusing them would make both signals
+    # unreadable.
     _metric(lines, "nyx_auth_failures_total", totals.get("auth_failures_total", local["auth_failures_total"]),
             "Rejected credentials", "counter")
     _metric(lines, "nyx_auth_blocked_total", totals.get("auth_blocked_total", local["auth_blocked_total"]),
