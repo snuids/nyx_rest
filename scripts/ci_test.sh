@@ -11,7 +11,7 @@
 # land, never lower it.
 set -eu
 
-FLOOR=40
+FLOOR=45
 
 python -m pip install --quiet -r sources/requirements-test.txt
 python -m coverage erase
