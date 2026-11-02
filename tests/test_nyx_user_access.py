@@ -95,17 +95,25 @@ class OwnAccountIdentityTests(unittest.TestCase):
 
 
 class WriteRestrictionTests(unittest.TestCase):
-    """Les trois indices qui portent des droits sont en lecture seule pour un non-admin."""
+    """Les indices qui portent des droits sont en lecture seule pour un non-admin."""
 
     def test_the_account_and_configuration_indices_are_protected(self):
         for name in ("nyx_user", "reindexed-nyx_user-v8", "nyx_app", "nyx_privilege",
                      "nyx_privileges", "nyx_privilege-history"):
             self.assertTrue(requires_admin_for_write(name), name)
 
+    def test_the_access_rule_and_filter_catalogues_are_protected(self):
+        # nyx_indice dit qui accède à quel index, nyx_filter qui voit quelles lignes :
+        # les réécrire reviendrait à s'attribuer des droits sans toucher à nyx_privilege.
+        for name in ("nyx_indice", "reindexed-nyx_indice-v8", "nyx_filter",
+                     "reindexed-nyx_filter", "nyx_indice*", "nyx_filter-2026"):
+            self.assertTrue(requires_admin_for_write(name), name)
+
     def test_data_indices_are_not_protected(self):
         # une app métier doit rester éditable par ses utilisateurs
         for name in ("airport_alert-2026.11", "nyx_energy-2026.11", "nyx_lambda",
-                     "nyx_user_history", "deliveries-2026"):
+                     "nyx_user_history", "deliveries-2026", "nyx_indice_history",
+                     "nyx_filters_business"):
             self.assertFalse(requires_admin_for_write(name), name)
 
     def test_the_guard_does_not_crash_on_a_missing_name(self):

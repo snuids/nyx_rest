@@ -83,21 +83,39 @@ def checkAPIKey(request):
     return False
 
 
-def getUserFromToken(request, token=None):
+def getUserFromToken(request, token=None, fresh=False):
+    """Payload du jeton ; `fresh=True` ignore la copie en mémoire de ce worker.
+
+    Chaque worker gunicorn garde sa propre copie du payload pendant cinq minutes (`TTLCache`),
+    et seule une déconnexion la vide plus tôt. Un changement de mot de passe écrit le nouveau
+    payload dans Redis et dans le worker qui a servi la requête : les deux autres continuaient
+    donc à répondre MUST_CHANGE_PASSWORD à un utilisateur qui venait de choisir son mot de
+    passe, jusqu'à cinq minutes et sur un appel sur trois (mesuré en production). Relire Redis
+    au moment de refuser coûte une requête, en lecture seule, dans la seule phase bridée.
+    """
     if token is None:
         token, _ = request_token(request)
     if token is None:
         return None
     with state.tokenlock:
-        if token in state.tokens:
+        if not fresh and token in state.tokens:
             return state.tokens[token]
-        redusr = state.redisserver.get("nyx_tok_" + token)
+        try:
+            redusr = state.redisserver.get("nyx_tok_" + token)
+        except Exception:
+            # Redis injoignable : mieux vaut garder la session en cours que refuser tout le
+            # monde ; la copie mémoire fait foi jusqu'au retour du cache.
+            logger.warning("Jetons : Redis injoignable, copie en mémoire conservée", exc_info=True)
+            return state.tokens.get(token)
         if redusr is not None:
             logger.info("Retrieved user for token " + fingerprint(token) + " from redis.")
             redusrobj = json.loads(redusr)
             state.tokens[token] = redusrobj
             logger.info("Token reinitialized from redis cluster.")
             return redusrobj
+        # Le jeton n'existe plus côté Redis (déconnexion faite ailleurs) : la copie locale est
+        # périmée, on la jette plutôt que de continuer à l'honorer.
+        state.tokens.pop(token, None)
 
     logger.info("Invalid Token:" + fingerprint(token))
     return None
@@ -161,6 +179,14 @@ def token_required(*roles):
                         "is preferred.", request.path
                     )
                 usr = getUserFromToken(request, token)
+                if usr is not None and must_change_password(usr, request.path):
+                    # Le drapeau a pu être levé par un autre worker : on relit Redis avant de
+                    # refuser. Sans cela, un utilisateur qui vient de choisir son mot de passe
+                    # reste bridé jusqu'à cinq minutes sur les workers qui avaient mémorisé le
+                    # jeton bridé — et il ne comprend pas pourquoi on le lui redemande.
+                    refreshed = getUserFromToken(request, token, fresh=True)
+                    if refreshed is not None:
+                        usr = refreshed
                 if usr is None:
                     ret = {'error': "UNKNOWN_TOKEN"}
                 elif must_change_password(usr, request.path):

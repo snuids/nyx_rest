@@ -68,11 +68,16 @@ NYX_USER_ROOTS = ("nyx_user", "reindexed-nyx_user")
 # Indices dont un compte ordinaire ne doit pas pouvoir écrire : ils portent des droits, pas
 # des données. `nyx_user` contient les privilèges et les condensats, `nyx_app` décide de ce
 # que chaque écran peut faire et `nyx_privilege` de ce que chaque rôle peut voir.
+# `nyx_indice` (les règles d'accès appliquées aux indices de données) et `nyx_filter` (le
+# catalogue de filtres) décident qui voit quoi : les réécrire revenait à s'ouvrir un index
+# interdit sans toucher à `nyx_privilege`.
 ADMIN_WRITE_ROOTS = (
     "nyx_user", "reindexed-nyx_user",
     "nyx_app", "reindexed-nyx_app",
     "nyx_privilege", "reindexed-nyx_privilege",
     "nyx_privileges", "reindexed-nyx_privileges",
+    "nyx_indice", "reindexed-nyx_indice",
+    "nyx_filter", "reindexed-nyx_filter",
 )
 
 
