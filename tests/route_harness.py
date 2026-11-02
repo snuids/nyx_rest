@@ -55,9 +55,15 @@ class FakeES:
     result. A fake cluster that filtered in place of the real one would give false assurance.
     """
 
-    def __init__(self, docs=None, foreign_hits=None):
+    def __init__(self, docs=None, foreign_hits=None, mappings=None, aggregations=None):
         self.docs = {index: dict(values) for index, values in (docs or {}).items()}
         self.foreign_hits = foreign_hits or {}
+        # field -> type, per index: `common.get_mappings` reads them to decide whether a facet
+        # is served on the field itself or on its `.keyword` sub-field
+        self.mappings = mappings or {}
+        # index -> {field: [buckets]}: what an aggregation returns
+        self.aggregations = aggregations or {}
+        self.indices = FakeIndices(self.mappings)
         self.calls = []
         self.written = []
         self.deleted = []
@@ -82,8 +88,10 @@ class FakeES:
                     for key, value in (self.docs.get(index) or {}).items()]
         else:
             hits = copy.deepcopy(hits)
+        aggregated = copy.deepcopy(self.aggregations.get(index) or {})
         return {"hits": {"hits": list(hits), "total": {"value": len(hits)}},
-                "aggregations": {}}
+                "aggregations": {field: {"buckets": buckets}
+                                 for field, buckets in aggregated.items()}}
 
     def info(self, **kwargs):
         # `common.get_es_info` calls es.info(request_timeout=5)
@@ -127,6 +135,18 @@ class FakeES:
             if call[1] == index and (doc_id is None or call[2] == doc_id):
                 return True
         return False
+
+
+class FakeIndices:
+    """Double of `es.indices`, for the mapping lookup the facets depend on."""
+
+    def __init__(self, mappings):
+        self.mappings = mappings
+
+    def get_mapping(self, index=None, **kwargs):
+        properties = {field: {"type": kind}
+                      for field, kind in (self.mappings.get(index) or {}).items()}
+        return {index: {"mappings": {"properties": properties}}}
 
 
 class FakeRedis:

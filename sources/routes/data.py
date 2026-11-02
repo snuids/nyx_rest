@@ -102,6 +102,13 @@ def register(app, api, name_space):
                         qcol += ".keyword"
 
                     cui = can_use_indice(app["config"]["index"], user, None)
+                    if not cui[0]:
+                        # The facet lists the distinct values of a field: serving it to an
+                        # account that may not read the index discloses its data without ever
+                        # returning a document. The route used to search regardless.
+                        logger.info("Index not allowed for user, facet skipped")
+                        queryf["buckets"] = []
+                        continue
 
                     size = 200
                     try:
