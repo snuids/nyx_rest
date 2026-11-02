@@ -81,9 +81,10 @@ jobs:
           set -eu
           total=$(cat .coverage-total)
           case "$total" in
-            8[5-9]|9[0-9]|100) colour=brightgreen ;;
-            7[0-9]|8[0-4])     colour=yellowgreen ;;
-            5[0-9]|6[0-9])     colour=yellow ;;
+            9[0-9]|100)        colour=brightgreen ;;
+            8[0-9])            colour=green ;;
+            6[0-9]|7[0-9])     colour=yellowgreen ;;
+            4[0-9]|5[0-9])     colour=orange ;;
             *)                 colour=red ;;
           esac
           mkdir -p badge && cd badge
