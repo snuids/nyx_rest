@@ -3,6 +3,7 @@ Elasticsearch helpers: index/translation caching, access-control check,
 AMQC event sender, and the handleAPICalls background thread.
 """
 
+import os
 import re
 import json
 import time
@@ -10,6 +11,7 @@ import logging
 from datetime import datetime, timedelta
 
 import state
+import metrics_aggregate
 
 logger = logging.getLogger()
 
@@ -184,6 +186,10 @@ def handleAPICalls():
                         messagebody += json.dumps(action) + "\r\n"
                         messagebody += json.dumps(api_entry) + "\r\n"
                     state.es.bulk(messagebody)
+            # Chaque worker publie ses compteurs : /metrics les additionne ensuite. La boucle
+            # existe déjà (un cycle toutes les 5 s), donc aucun thread supplémentaire.
+            metrics_aggregate.publish(state.redisserver, os.getpid(),
+                                      metrics_aggregate.snapshot(state))
             if state.conn is not None:
                 logger.debug("Sending Life Sign")
                 state.conn.send_life_sign()

@@ -35,11 +35,17 @@ class FakeResponse:
 
 
 class FakeRedis:
-    def __init__(self, up=True):
+    def __init__(self, up=True, entries=None):
         self.up = up
+        self.entries = entries or {}
 
     def get(self, key):
         return None
+
+    def hgetall(self, key):
+        if not self.up:
+            raise ConnectionError("redis is down")
+        return dict(self.entries)
 
     def ping(self):
         if not self.up:
@@ -123,6 +129,8 @@ class RouteTests(unittest.TestCase):
         state.last_lifesign = datetime.now()
         state.requests_total = 0
         state.errors_total = 0
+        state.auth_failures_total = 0
+        state.auth_blocked_total = 0
 
     # -- authentication ---------------------------------------------------
 
@@ -223,14 +231,28 @@ class RouteTests(unittest.TestCase):
             self.assertIn(expected, body)
         self.assertIn("# TYPE nyx_requests_total counter", body)
 
-    def test_metrics_labels_the_counters_with_the_worker_pid(self):
-        """Trois workers gunicorn, trois compteurs : sans le label, la série fait des dents de scie."""
+    def test_metrics_sums_what_every_worker_published(self):
+        """Prometheus ne voyait qu'un worker sur trois : /metrics additionne ce que Redis contient."""
+        now = int(datetime.now().timestamp())
+        state.requests_total = 999          # valeur locale : elle ne doit pas être exposée seule
+        state.errors_total = 999
+        state.redisserver = FakeRedis(entries={
+            "7": json.dumps({"at": now, "requests_total": 10, "errors_total": 1}),
+            "9": json.dumps({"at": now, "requests_total": 5, "errors_total": 0}),
+        })
+        body = self.client.get("/api/v1/metrics").get_data(as_text=True)
+        self.assertIn("nyx_requests_total 15", body)
+        self.assertIn("nyx_errors_total 1", body)
+        self.assertIn("nyx_counters_workers 2", body)
+        self.assertNotIn("worker=", body)
+
+    def test_metrics_falls_back_on_local_counters_without_redis_publishers(self):
         state.requests_total = 12
         state.errors_total = 3
         body = self.client.get("/api/v1/metrics").get_data(as_text=True)
-        self.assertRegex(body, r'nyx_requests_total\{worker="\d+"\} 12')
-        self.assertRegex(body, r'nyx_errors_total\{worker="\d+"\} 3')
-        self.assertRegex(body, r'nyx_active_tokens\{worker="\d+"\}')
+        self.assertIn("nyx_requests_total 12", body)
+        self.assertIn("nyx_errors_total 3", body)
+        self.assertIn("nyx_counters_workers 0", body)
 
     def test_metrics_reports_a_down_dependency(self):
         state.es = FakeES(up=False)
