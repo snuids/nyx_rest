@@ -61,6 +61,7 @@ v3.22.0 01/Nov/2026  Configuration bundle: export the platform design and plan/a
 v3.22.1 01/Nov/2026  Authorization: Bearer *** on every route; /healthz and /metrics added
 v3.22.2 01/Nov/2026  Log rollover is serialised between gunicorn workers (no more lost archives)
 v3.22.3 01/Nov/2026  Metrics carry the worker pid, so rate() stops reading the counter as resetting
+v3.22.15 02/Nov/2026  Coverage badge fed by CI, and master now runs the suite
 v3.22.14 02/Nov/2026  File routes downloaded, zipped and uploaded under test; floor at 45
 v3.22.13 02/Nov/2026  Repository language: English log messages, API messages and test assertions
 v3.22.12 02/Nov/2026  Coverage enters CI: 43 % measured, a floor of 40, and a skip now fails the job
