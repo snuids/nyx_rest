@@ -23,7 +23,7 @@ from db_postgres import get_postgres_connection
 from es_helpers import (
     can_use_indice, is_nyx_user_indice, can_read_nyx_user, requires_admin_for_write, is_admin,
 )
-from es_read import fetch_document, find_user_by_login
+from es_read import fetch_document, find_user_by_login, is_not_found
 from common import loadData, get_mappings, kibanaData
 from pg_common import loadPGData, getAppByID, get_sql_server_connection
 from helpers.sql_queries import build_crud_query
@@ -479,8 +479,21 @@ def register(app, api, name_space):
                     existing = None
                     try:
                         existing = state.es.get(index="nyx_user", id=object)["_source"]
-                    except Exception:
-                        existing = None
+                    except Exception as exc:
+                        if not is_not_found(exc):
+                            # A read failure is not an absence. Falling through to the
+                            # creation branch would mint a temporary password nobody knows
+                            # and close the account — the very defect this guard exists to
+                            # prevent, this time triggered by a cluster hiccup.
+                            logger.error("nyx_user: account unreadable before the write",
+                                         exc_info=True)
+                            return {'error': "unable to read the account"}
+                        # Genuine absence. Eight accounts are indexed under another identifier
+                        # than the one their owner signs in with (`amarchand@icloud.com` for
+                        # the login `amarchand`), so look for the same person under
+                        # `login.keyword` before treating this as a creation.
+                        hit = find_user_by_login(state.es, object, state.elkversion)
+                        existing = hit["_source"] if hit else None
 
                     if provided and "$pbkdf2-sha256" not in provided:
                         dataobj["password"] = pbkdf2_sha256.hash(provided)

@@ -25,6 +25,7 @@ import unittest
 import uuid
 from datetime import datetime
 from pathlib import Path
+from typing import Optional
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "sources"))
 
@@ -68,10 +69,15 @@ class FakeES:
         self.written = []
         self.deleted = []
         self.searches = []
+        # Set to an exception instance to make `get` fail the way a cluster error does —
+        # distinct from the `NotFound` a missing document raises.
+        self.get_error: "Optional[Exception]" = None
 
     # -- reading ---------------------------------------------------------
     def get(self, index=None, id=None, doc_type=None, **kwargs):
         self.calls.append(("get", index, id))
+        if self.get_error is not None:
+            raise self.get_error
         source = (self.docs.get(index) or {}).get(id)
         if source is None:
             raise NotFound(f"{index}/{id}")
@@ -88,6 +94,19 @@ class FakeES:
                     for key, value in (self.docs.get(index) or {}).items()]
         else:
             hits = copy.deepcopy(hits)
+        # One result decides a write: the login lookup that tells an update from a creation
+        # in `/generic/nyx_user/<id>`. A fake returning every account would have the route
+        # copy a stranger's hash onto the document being saved, so that single term is
+        # honoured. Everything else still returns the index untouched, on purpose: the
+        # rights tests assert on the body sent, and a fake that filtered for them would
+        # give false assurance.
+        wanted = ((body or {}).get("query", {}) or {}).get("term", {}) or {}
+        for field, value in wanted.items():
+            if field.split(".")[0] == "login":
+                hits = [h for h in hits
+                        if str((h.get("_source") or {}).get("login") or "").lower()
+                        == str(value).lower()]
+                break
         aggregated = copy.deepcopy(self.aggregations.get(index) or {})
         return {"hits": {"hits": list(hits), "total": {"value": len(hits)}},
                 "aggregations": {field: {"buckets": buckets}
