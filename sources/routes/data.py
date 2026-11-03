@@ -476,13 +476,26 @@ def register(app, api, name_space):
                     from passlib.hash import pbkdf2_sha256
                     from password_policy import generate_temporary_password
                     provided = dataobj.get("password") or ""
+                    existing = None
+                    try:
+                        existing = state.es.get(index="nyx_user", id=object)["_source"]
+                    except Exception:
+                        existing = None
+
                     if provided and "$pbkdf2-sha256" not in provided:
                         dataobj["password"] = pbkdf2_sha256.hash(provided)
-                    elif not provided or "$pbkdf2-sha256" in provided:
-                        # No usable password supplied (field absent, empty, or a hash
-                        # frozen like the one the interface sent for every account): one is
-                        # generated that nobody knows, and the account stays closed until
-                        # its owner has chosen one.
+                    elif existing is not None:
+                        # An update, not a creation. The interface sends the stored hash back —
+                        # or leaves the field out — and either way the secret is already
+                        # decided. Minting a fresh one here reset the password of every account
+                        # whose language, phone or privilege an administrator edited, and left
+                        # it closed behind `mustResetPassword`.
+                        dataobj["password"] = existing.get("password", "")
+                        dataobj["mustResetPassword"] = existing.get("mustResetPassword", False)
+                    else:
+                        # A new account with nothing usable supplied: one is generated that
+                        # nobody knows, and the account stays closed until its owner has
+                        # chosen one.
                         dataobj["password"] = pbkdf2_sha256.hash(generate_temporary_password())
                         dataobj["mustResetPassword"] = True
                     data = json.dumps(dataobj)
