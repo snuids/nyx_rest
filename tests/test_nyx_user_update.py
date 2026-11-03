@@ -112,6 +112,40 @@ class UpdateAccountTests(RouteTestCase):
         self.assertTrue(self.stored("neuf@example.com")["mustResetPassword"],
                         "a brand new account with no password must open on nothing")
 
+    def test_a_failed_read_refuses_the_write_instead_of_resetting_the_password(self):
+        document = dict(self.stored())
+        document["language"] = "nl"
+        self.es.get_error = ConnectionError("cluster unavailable")
+
+        code, body, _ = self.save(document)
+
+        self.assertNotEqual(body["error"], "", "a save that could not read must not claim success")
+        self.assertEqual(self.stored()["language"], "fr", "nothing may be written")
+        self.assertEqual(self.stored()["password"], STORED,
+                         "an unreadable account is not a new account: the hash must survive")
+        self.assertFalse(self.stored()["mustResetPassword"])
+        self.assertEqual(self.es.written_on("nyx_user"), [],
+                         "the write must not reach the cluster at all")
+
+    def test_saving_by_login_finds_the_account_indexed_under_another_identifier(self):
+        # carol signs in as `carol` but is indexed as carol@example.com
+        self.es.docs["nyx_user"]["carol@example.com"] = dict(
+            login="carol", privileges=["YUL"], language="fr",
+            password=STORED, mustResetPassword=False)
+        self.es.foreign_hits["nyx_user"] = [
+            {"_id": "carol@example.com", "_index": "nyx_user",
+             "_source": dict(self.es.docs["nyx_user"]["carol@example.com"])}
+        ]
+
+        code, body, _ = self.save({"login": "carol", "privileges": ["YUL"], "language": "nl"},
+                                  target="carol")
+
+        self.assertEqual(body["error"], "")
+        written = dict(self.es.written_on("nyx_user"))["carol"]
+        self.assertEqual(written["password"], STORED,
+                         "the account exists under its e-mail: its hash is the stored one")
+        self.assertFalse(written["mustResetPassword"])
+
 
 if __name__ == "__main__":
     unittest.main()

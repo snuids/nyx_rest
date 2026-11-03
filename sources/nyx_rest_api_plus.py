@@ -61,6 +61,7 @@ v3.22.0 01/Nov/2026  Configuration bundle: export the platform design and plan/a
 v3.22.1 01/Nov/2026  Authorization: Bearer *** on every route; /healthz and /metrics added
 v3.22.2 01/Nov/2026  Log rollover is serialised between gunicorn workers (no more lost archives)
 v3.22.3 01/Nov/2026  Metrics carry the worker pid, so rate() stops reading the counter as resetting
+v3.22.18 03/Nov/2026  A save that cannot read the account is refused instead of resetting its password
 v3.22.17 02/Nov/2026  Editing an account no longer resets its password
 v3.22.16 02/Nov/2026  Facets: covered, and no longer built on an index the account cannot read
 v3.22.15 02/Nov/2026  Coverage badge fed by CI, and master now runs the suite
