@@ -17,6 +17,7 @@ from datetime import datetime, timedelta
 import state
 from config import settings
 from middleware import token_required, check_post_parameters, checkAPIKey
+from lib.amq_destinations import is_allowed_destination
 
 logger = logging.getLogger()
 
@@ -175,6 +176,12 @@ def register(app, api, name_space):
             headers = None
             if "headers" in req and len(req["headers"]) > 0:
                 headers = json.loads(req["headers"])
+            # The broker is the platform's internal bus: an ordinary account may only reach the
+            # destinations the interface itself publishes to (see lib/amq_destinations.py).
+            if not is_allowed_destination(req["destination"], user):
+                logger.warning("Publication to %s refused for %s",
+                               req["destination"], (user or {}).get("id"))
+                return {'error': "destination not allowed"}, 403
             state.conn.send_message(req["destination"], req["body"], headers=headers)
             return {'error': ""}
 

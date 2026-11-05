@@ -1,4 +1,5 @@
 import json
+import re
 import time
 import uuid
 import base64
@@ -25,6 +26,7 @@ from opensearchpy import OpenSearch as ES, RequestsHttpConnection as RC
 from logstash_async.handler import AsynchronousLogstashHandler
 
 from common import loadData ,kibanaData
+from lib.export_authz import kibana_indices, load_rules, may_export
 from pg_common import loadPGData
 from config import settings
 
@@ -84,30 +86,75 @@ def get_postgres_connection():
     return None
 
 ################################################################################
+def account_behind(mes):
+    """The `nyx_user` record behind an export request, or `None` when it must be dropped.
+
+    Two things come from here. The rights: the API checks `can_use_indice` on every read, but this
+    worker reads Elasticsearch directly, so it re-applies the rule itself. And the recipient: the
+    mail used to go to `mes["user"]["id"]`, an address the message chose, which turned any export
+    into a way of sending an index to a mailbox of the caller's choosing.
+    """
+    global es
+    user_id = (mes.get("user") or {}).get("id")
+    if not user_id:
+        logger.error("Export request without an account, dropped")
+        return None
+    if es is None:
+        logger.error("No cluster client, export dropped")
+        return None
+    try:
+        record = es.get(index="nyx_user", id=user_id)
+    except Exception:
+        logger.error("Unknown account %s, export dropped", user_id)
+        return None
+    user = dict(record.get("_source") or {})
+    user["id"] = record.get("_id", user_id)
+    return user
+
+
 def messageReceived(destination,message,headers):
     global es
     logger.debug("==> "*10)
     logger.debug("Message Received %s" % destination)
     logger.debug(message)
-    
+
     if "LOAD_DATA" in destination:
         mes=json.loads(message)
-        # if "data" in mes and "size" in mes["data"]:
-        #     logger.info("Update Size to 50000")
-        #     mes["data"]["size"]=50000
+        user=account_behind(mes)
+        if user is None or not may_export(mes.get("index"), user, load_rules(es)):
+            logger.error("LOAD_DATA refused: %s may not export %s",
+                         (mes.get("user") or {}).get("id"), mes.get("index"))
+            return
+        mes["user"]=user
         res=remoteLoadData(mes)
         sendMail(res,mes)
 
     if "LOAD_PGDATA" in destination:
         mes=json.loads(message)
-        # if "data" in mes and "size" in mes["data"]:
-        #     logger.info("Update Size to 50000")
-        #     mes["data"]["size"]=50000
+        user=account_behind(mes)
+        if user is None:
+            logger.error("LOAD_PGDATA refused: no known account")
+            return
+        # A PostgreSQL export has no privilege model to re-apply here (the tables are declared per
+        # application, and `pg_search` does not check them either): the account is authenticated,
+        # the recipient is the real one, and that is all this path can promise for now.
+        mes["user"]=user
         res=remoteLoadPGData(mes)
-        sendMail(res,mes)        
+        sendMail(res,mes)
 
     if "LOAD_KIBANA" in destination:
         mes=json.loads(message)
+        user=account_behind(mes)
+        rules=load_rules(es)
+        indices=kibana_indices(mes.get("matchrequest"))
+        if user is None or rules is None or not indices:
+            logger.error("LOAD_KIBANA refused: unknown account, unreadable rules or no index")
+            return
+        allowed=all(may_export(indice, user, rules) for indice in indices)
+        if not allowed:
+            logger.error("LOAD_KIBANA refused: %s may not export %s", user.get("id"), indices)
+            return
+        mes["user"]=user
         res=remoteKibanaData(mes)
         res["total"]=res["records"]
         res["file"]="./outputs/"+res["fileName"]

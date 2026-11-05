@@ -12,6 +12,7 @@ from datetime import datetime, timedelta
 
 import state
 import metrics_aggregate
+from lib.index_expression import expression_reaches, has_wildcard  # noqa: F401 (re-exported)
 
 logger = logging.getLogger()
 
@@ -78,28 +79,6 @@ ADMIN_WRITE_ROOTS = (
     "nyx_indice", "reindexed-nyx_indice",
     "nyx_filter", "reindexed-nyx_filter",
 )
-
-
-def has_wildcard(name):
-    return "*" in name or "?" in name
-
-
-def expression_reaches(expression, root):
-    """True if this index expression may designate the `root` index.
-
-    Three spellings lead to the same index and must be treated alike: the exact name
-    (`nyx_user`), the reindexing alias (`reindexed-nyx_user-v8`, suffix after `-` or `.`)
-    and the pattern (`nyx_user*`, `nyx_*`, `*`). A pattern is compared by prefix: as soon
-    as it may cover the root, it is considered to target the index — `nyx_apicalls*` is
-    not concerned, `nyx_*` is.
-    """
-    name = str(expression or "").lower()
-    if not name:
-        return False
-    if not has_wildcard(name):
-        return (name == root or name.startswith(root + "-") or name.startswith(root + "."))
-    prefix = re.split(r"[*?]", name, 1)[0]
-    return root.startswith(prefix) or prefix.startswith(root)
 
 
 def is_nyx_user_indice(indice):
