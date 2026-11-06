@@ -7,11 +7,13 @@
 #     dependency is missing — a missing import used to disable a third of the suite in silence;
 #   * nothing measured how much code the tests actually exercised.
 #
-# The coverage floor is the level reached on 2026-11-02 (43 % measured). Raise it as tests
-# land, never lower it.
+# The coverage floor is the level actually measured, never a wish: 43 % on 2026-11-02, then 48 %
+# on 2026-11-06 once `tests/test_routes_access.py` covered the publication and index-rule
+# boundaries — the two places where a routing mistake is a data leak. Raise it as tests land,
+# never lower it.
 set -eu
 
-FLOOR=47
+FLOOR=48
 
 python -m pip install --quiet -r sources/requirements-test.txt
 python -m coverage erase

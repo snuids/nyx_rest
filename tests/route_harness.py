@@ -231,8 +231,9 @@ class FakeBroker:
     def __init__(self):
         self.messages = []
 
-    def send_message(self, destination, body):
+    def send_message(self, destination, body, headers=None):
         self.messages.append((destination, body))
+        self.last_headers = headers
         return True
 
     def sent_to(self, destination):
