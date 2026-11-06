@@ -47,6 +47,12 @@ class Settings(BaseSettings):
 
     # Elasticsearch / OpenSearch
     ELK_URL: str = ""
+    # Declared again: the compose files still provide `ELK_PORT`, and `nyx_rest_helper.py` reads it
+    # (`http://<host>:<port>`). Without the field, pydantic ignored the variable and the worker died
+    # at import with `AttributeError: 'Settings' object has no attribute 'ELK_PORT'` — the reason
+    # that image had not been rebuilt in ten months. The API does not use it (the transport defaults
+    # to 9200 on an http URL); the field is here so the two agree.
+    ELK_PORT: str = "9200"
     ELK_SSL: bool = False
     ELK_LOGIN: str = ""
     ELK_PASSWORD: str = ""
