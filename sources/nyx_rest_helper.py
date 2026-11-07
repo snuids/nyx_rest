@@ -48,8 +48,30 @@ def check_pg():
             cur.close()
         except Exception as e:
             logger.error("Unable to check posgresql",exc_info=True)
-            pg_connection=None
-            pass
+            discard_pg_connection()
+
+
+def discard_pg_connection():
+    """Drop the shared connection so the next message reconnects instead of failing."""
+    global pg_connection
+    conn = pg_connection
+    pg_connection = None
+    if conn is not None:
+        try:
+            conn.close()
+        except Exception:
+            logger.warning("Unable to close the PostgreSQL connection", exc_info=True)
+
+
+def rollback_pg_connection(conn):
+    """Undo the failed statement: one connection serves every message of the worker."""
+    if conn is None:
+        return
+    try:
+        conn.rollback()
+    except Exception:
+        logger.warning("Unable to roll back the failed statement", exc_info=True)
+        discard_pg_connection()
 
 
 
@@ -64,6 +86,10 @@ def get_postgres_connection():
                                     host = settings.PG_HOST,
                                     port = settings.PG_PORT,
                                     database = settings.PG_DATABASE)
+        # Same reason as the API: a statement that fails must not leave the transaction
+        # aborted for the next message of this worker, and the connection must not sit
+        # `idle in transaction` between two exports.
+        pg_connection.autocommit = True
         cursor = pg_connection.cursor()
         # Print PostgreSQL Connection properties (never the password)
         dsn_params = pg_connection.get_dsn_parameters()
@@ -270,8 +296,15 @@ def remoteLoadPGData(message):
     logger.info("=== "*10)
     logger.info(message)
 
-    return loadPGData(es,message["appid"],get_postgres_connection(),conn,message["data"],message["download"]
-                ,False,message["user"],message["outputformat"],OUTPUT_URL,OUTPUT_FOLDER)
+    try:
+        return loadPGData(es,message["appid"],get_postgres_connection(),conn,message["data"],message["download"]
+                    ,False,message["user"],message["outputformat"],OUTPUT_URL,OUTPUT_FOLDER)
+    except Exception:
+        # Without this the failed statement leaves the shared connection's transaction
+        # aborted and every later export of this worker dies for an unrelated reason.
+        logger.error("Unable to export the SQL app " + str(message.get("appid")), exc_info=True)
+        rollback_pg_connection(pg_connection)
+        raise
 
 def remoteKibanaData(message):
     logger.info("=== "*10)
