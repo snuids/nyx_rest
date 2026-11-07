@@ -19,7 +19,7 @@ from config import settings
 from middleware import (
     token_required, check_post_parameters, DateTimeEncoder, fingerprint, request_token
 )
-from db_postgres import get_postgres_connection
+from db_postgres import get_postgres_connection, discard_postgres_connection
 from es_helpers import (
     can_use_indice, is_nyx_user_indice, can_read_nyx_user, requires_admin_for_write, is_admin,
 )
@@ -29,6 +29,39 @@ from pg_common import loadPGData, getAppByID, get_sql_server_connection
 from helpers.sql_queries import build_crud_query
 
 logger = logging.getLogger()
+
+
+# The identifier of a SQL record travels in the URL, and the console interpolates the key
+# column of the row it displays: a row whose key is NULL leaves as the string "null" — the
+# `cars` app has `pkey: year` and two rows without a year, which `pg_search` returns as
+# `_id: null`. Bound to an integer column that is `invalid input syntax for type integer:
+# "null"`; the statement then aborted the shared connection's transaction, so every later
+# request of that worker — on any SQL app, not just that one — answered 500 with
+# `InFailedSqlTransaction` until the health check reconnected, ten seconds later. Refuse
+# the placeholder here: there is no record behind it, so no connection is worth touching.
+PLACEHOLDER_KEYS = ("", "null", "none", "nan", "undefined")
+
+
+def is_placeholder_key(value):
+    return value is None or str(value).strip().lower() in PLACEHOLDER_KEYS
+
+
+def rollback_sql_connection(conn):
+    """Undo the failed statement on the connection the route used.
+
+    A PostgreSQL connection is shared by every request of the worker: without this the
+    transaction stays aborted and the next request fails for a reason that has nothing to
+    do with it. A rollback that itself fails means the connection cannot be reused, so it
+    is dropped and the next call reconnects instead of failing for ten seconds.
+    """
+    if conn is None:
+        return
+    try:
+        conn.rollback()
+    except Exception:
+        logger.warning("Unable to roll back the failed statement", exc_info=True)
+        if conn is getattr(state, "pg_connection", None):
+            discard_postgres_connection()
 
 
 
@@ -171,13 +204,22 @@ def register(app, api, name_space):
         def post(self, appid, user=None):
             logger.info("PG Generic Search=" + appid)
             data = json.loads(request.data.decode("utf-8"))
-            return loadPGData(
-                state.es, appid, get_postgres_connection(), state.conn, data,
-                (request.args.get("download", "0") == "1"),
-                True, user,
-                request.args.get("output", "csv"),
-                state.OUTPUT_URL, state.OUTPUT_FOLDER,
-            )
+            try:
+                return loadPGData(
+                    state.es, appid, get_postgres_connection(), state.conn, data,
+                    (request.args.get("download", "0") == "1"),
+                    True, user,
+                    request.args.get("output", "csv"),
+                    state.OUTPUT_URL, state.OUTPUT_FOLDER,
+                )
+            except Exception:
+                # A 500 is an empty screen with no explanation in the console, and a
+                # statement that fails on the shared connection takes the whole worker
+                # with it unless the transaction is closed here.
+                logger.error("Unable to read the SQL app " + appid, exc_info=True)
+                rollback_sql_connection(state.pg_connection)
+                return {'error': "unable to load data", "records": [], "aggs": None,
+                        "total": 0, "colnames": []}
 
     @name_space.route('/generic_search/<string:index>')
     class genericSearch(Resource):
@@ -327,6 +369,10 @@ def register(app, api, name_space):
             if ap is not None:
                 db_type = ap["_source"]["config"].get("databaseType", "postgres")
 
+        if met in ('get', 'delete') and is_placeholder_key(pkey):
+            logger.info("PG record identifier is a placeholder: refused before the database")
+            return {'error': "invalid record identifier", "data": None}
+
         if met == 'get':
             try:
                 query, params = build_crud_query(db_type, met, index, col, pkey)
@@ -334,56 +380,66 @@ def register(app, api, name_space):
                 return {'error': "invalid SQL identifier"}
 
             description = None
+            dbconn = None
 
-            if db_type == "sqlserver":
-                def convert_sql_server_type_to_python_type(sql_type):
-                    if sql_type == "int":
-                        return 23
-                    elif sql_type == "str":
-                        return 1043
-                    elif sql_type == "datetime":
-                        return 1184
-                    else:
-                        return -1
-
-                sqconn = get_sql_server_connection(ap)
-                if sqconn is None:
-                    return {'error': "unable to connect to database"}
-                with sqconn.cursor() as cursor:
-                    cursor.execute(query, params)
-                    res = cursor.fetchone()
-                    description = [
-                        {"col": x[0], "type": convert_sql_server_type_to_python_type(x[1].__name__)}
-                        for x in cursor.description
-                    ]
-
-                    res2 = {}
-                    for index, x in enumerate(cursor.description):
-                        if x[1] in [1082, 1184, 1114]:
-                            print(res[index])
-                            res2[x[0]] = res[index].isoformat()
+            try:
+                if db_type == "sqlserver":
+                    def convert_sql_server_type_to_python_type(sql_type):
+                        if sql_type == "int":
+                            return 23
+                        elif sql_type == "str":
+                            return 1043
+                        elif sql_type == "datetime":
+                            return 1184
                         else:
-                            res2[x[0]] = res[index]
-                        res2[x[0] + "_$type"] = convert_sql_server_type_to_python_type(
-                            x[1].__name__
-                        )
-                sqconn.commit()
-            else:
-                with get_postgres_connection().cursor() as cursor:
-                    cursor.execute(query, params)
-                    res = cursor.fetchone()
-                    description = [{"col": x[0], "type": x[1]} for x in cursor.description]
+                            return -1
 
-                    res2 = {}
-                    for index, x in enumerate(cursor.description):
-                        if x[1] in [1082, 1184, 1114]:
-                            print(res[index])
-                            res2[x[0]] = res[index].isoformat()
-                        else:
-                            res2[x[0]] = res[index]
-                        res2[x[0] + "_$type"] = x[1]
+                    dbconn = get_sql_server_connection(ap)
+                    if dbconn is None:
+                        return {'error': "unable to connect to database"}
+                    with dbconn.cursor() as cursor:
+                        cursor.execute(query, params)
+                        res = cursor.fetchone()
+                        description = [
+                            {"col": x[0],
+                             "type": convert_sql_server_type_to_python_type(x[1].__name__)}
+                            for x in cursor.description
+                        ]
 
-                state.pg_connection.commit()
+                        res2 = {}
+                        for index, x in enumerate(cursor.description):
+                            if x[1] in [1082, 1184, 1114]:
+                                res2[x[0]] = res[index].isoformat()
+                            else:
+                                res2[x[0]] = res[index]
+                            res2[x[0] + "_$type"] = convert_sql_server_type_to_python_type(
+                                x[1].__name__
+                            )
+                    dbconn.commit()
+                else:
+                    dbconn = get_postgres_connection()
+                    if dbconn is None:
+                        return {'error': "unable to connect to database"}
+                    with dbconn.cursor() as cursor:
+                        cursor.execute(query, params)
+                        res = cursor.fetchone()
+                        description = [{"col": x[0], "type": x[1]}
+                                       for x in cursor.description]
+
+                        res2 = {}
+                        for index, x in enumerate(cursor.description):
+                            if x[1] in [1082, 1184, 1114]:
+                                res2[x[0]] = res[index].isoformat()
+                            else:
+                                res2[x[0]] = res[index]
+                            res2[x[0] + "_$type"] = x[1]
+
+                    dbconn.commit()
+            except Exception:
+                logger.error("Unable to read the SQL record.", exc_info=True)
+                rollback_sql_connection(dbconn)
+                return {'error': "unable to read record", "data": None}
+
             return {'error': "", "data": res2, "columns": description}
 
         elif met == 'post':
@@ -407,13 +463,19 @@ def register(app, api, name_space):
                 logger.error("No database connection available for record create/update.")
                 return {'error': "unable to connect to database"}
 
-            with dbconn.cursor() as cursor:
-                cursor.execute(query, params)
-            dbconn.commit()
+            try:
+                with dbconn.cursor() as cursor:
+                    cursor.execute(query, params)
+                dbconn.commit()
+            except Exception:
+                logger.error("Unable to create or update the SQL record.", exc_info=True)
+                rollback_sql_connection(dbconn)
+                return {'error': "unable to save record"}
 
             return {'error': ""}
 
         elif met == 'delete':
+            dbconn = None
             try:
                 if db_type == "sqlserver":
                     dbconn = get_sql_server_connection(ap)
@@ -428,8 +490,9 @@ def register(app, api, name_space):
                 with dbconn.cursor() as cursor:
                     cursor.execute(query, params)
                 dbconn.commit()
-            except:
+            except Exception:
                 logger.error("Unable to delete record.", exc_info=True)
+                rollback_sql_connection(dbconn)
                 return {'error': "unable to delete record"}
 
             return {'error': ""}

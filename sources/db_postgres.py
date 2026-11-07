@@ -26,8 +26,26 @@ def check_pg():
             cur.close()
         except Exception as e:
             logger.error("Unable to check postgresql", exc_info=True)
-            state.pg_connection = None
+            discard_postgres_connection()
             get_postgres_connection()
+
+
+def discard_postgres_connection():
+    """Drop the shared connection so the next call reconnects.
+
+    One connection serves every request of a worker: when it becomes unusable (server
+    restart, broken socket) the whole worker answers 500 until something replaces it.
+    The health check does that on its own, but it only looks once every ten seconds, so
+    a request that fails on a dead connection keeps failing for that long. Any caller
+    that sees an error it cannot classify can call this instead of waiting for the thread.
+    """
+    conn = state.pg_connection
+    state.pg_connection = None
+    if conn is not None:
+        try:
+            conn.close()
+        except Exception:
+            logger.warning("Unable to close the PostgreSQL connection", exc_info=True)
 
 
 def get_postgres_connection():
@@ -53,6 +71,16 @@ def get_postgres_connection():
                 state.pg_connection = _future.result(timeout=6)
             except concurrent.futures.TimeoutError:
                 raise Exception("PostgreSQL connection timed out after 6 seconds")
+
+        # One connection serves every request of the worker, so a transaction that stays
+        # open is shared too: a statement that fails leaves it aborted and every later
+        # request of that worker answers `InFailedSqlTransaction` — on any SQL app, not
+        # just the one that failed — until the health check replaces the connection ten
+        # seconds later. In autocommit no transaction is left behind, so the failed
+        # statement is the only casualty; the explicit `commit()` calls still work (they
+        # become no-ops) and the connection no longer sits `idle in transaction`, which
+        # also stopped the reads from holding a snapshot between requests.
+        state.pg_connection.autocommit = True
 
         cursor = state.pg_connection.cursor()
         dsn_params = state.pg_connection.get_dsn_parameters()
