@@ -478,6 +478,56 @@ def register(api, name_space):
         'new_password': fields.String(description="The user password.", required=True),
     })
 
+    preferencesAPI = name_space.model('Preferences', {
+        'theme': fields.String(description="UI theme: light, dark or auto (follows the hour).", required=False),
+    })
+
+    @name_space.route('/cred/preferences')
+    class preferences(Resource):
+        """Per-user UI preferences, stored on the user's own document.
+
+        The user document already carries `language` and `privileges`; the theme joins them so a
+        preference follows the account from one browser to the next. Only the caller's own record is
+        ever touched, which is why this does not need the admin privilege that `nyx_user` writes
+        require."""
+
+        @token_required()
+        @api.doc(description="Save the caller's UI preferences.", params={'token': 'A valid token'})
+        @api.expect(preferencesAPI)
+        def post(self, user=None):
+            logger.info(">>> Save preferences")
+            try:
+                req = json.loads(request.data.decode("utf-8"))
+            except ValueError:
+                return {"error": "invalid_json"}, 400
+            if not isinstance(req, dict):
+                return {"error": "invalid_json"}, 400
+
+            allowed = {"theme": ("light", "dark", "auto")}
+            updates = {}
+            for key, accepted in allowed.items():
+                if key not in req:
+                    continue
+                value = req[key]
+                if not isinstance(value, str) or value not in accepted:
+                    return {"error": "invalid_value", "field": key,
+                            "accepted": list(accepted)}, 400
+                updates[key] = value
+            if not updates:
+                return {"error": "nothing_to_save"}, 400
+
+            try:
+                if state.elkversion >= 7:
+                    state.es.update(index="nyx_user", id=user["id"], body={"doc": updates})
+                else:
+                    state.es.update(index="nyx_user", doc_type="doc", id=user["id"],
+                                    body={"doc": updates})
+            except Exception as e:
+                logger.error("Unable to save preferences for %s: %s", user.get("id"), e)
+                return {"error": "storage_failed"}, 500
+            logger.info("Preferences saved for %s: %s", user.get("id"), ",".join(updates))
+            return {"error": "", "preferences": updates}
+
     @name_space.route('/cred/changepassword')
     class change_password(Resource):
         @token_required()

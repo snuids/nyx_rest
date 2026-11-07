@@ -134,6 +134,27 @@ class FakeES:
         self.docs.setdefault(index, {})[id] = copy.deepcopy(parsed)
         return {"result": "created", "_id": id}
 
+    def update(self, index=None, id=None, body=None, doc_type=None, **kwargs):
+        """Partial update, like the real client: `{"doc": {...}}` merges into the document.
+
+        The preferences route is the first caller; a fake that ignored the write would let it
+        pass while saving nothing."""
+        parsed = body
+        if isinstance(body, str):
+            try:
+                parsed = json.loads(body)
+            except ValueError:
+                parsed = body
+        patch = (parsed or {}).get("doc") or {}
+        current = (self.docs.get(index) or {}).get(id)
+        if current is None:
+            raise NotFound(index + "/" + str(id))
+        merged = copy.deepcopy(current)
+        merged.update(copy.deepcopy(patch))
+        self.written.append((index, id, merged))
+        self.docs[index][id] = merged
+        return {"result": "updated", "_id": id}
+
     def delete(self, index=None, id=None, doc_type=None, **kwargs):
         self.deleted.append((index, id))
         (self.docs.get(index) or {}).pop(id, None)

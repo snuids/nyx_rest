@@ -324,3 +324,68 @@ class ImpersonationTests(RouteTestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+@unittest.skipUnless(auth_routes is not None, "routes.auth non importable")
+class PreferencesTests(RouteTestCase):
+    """`/cred/preferences` : un reglage d'interface par compte, sur son propre document.
+
+    Le theme vit a cote de `language` et `privileges` dans `nyx_user` : il suit donc le compte
+    d'un navigateur a l'autre. La route n'ecrit que sur l'appelant — c'est ce que ces tests
+    verifient, plutot que la valeur en base seule.
+    """
+
+    route_modules = (auth_routes, misc_routes)
+
+    def setUp(self):
+        super().setUp()
+        self.es.docs["nyx_user"] = users()
+        code, body, _ = self.call("post", "/api/v1/cred/login",
+                                  body={"login": "alice@example.com", "password": PASSWORD})
+        self.assertEqual(body["error"], "")
+        self.token = body["cred"]["token"]
+
+    def test_the_theme_lands_on_the_callers_own_document(self):
+        before = dict(self.es.docs["nyx_user"]["alice@example.com"])
+        code, body, _ = self.call("post", "/api/v1/cred/preferences", self.token,
+                                  {"theme": "dark"})
+        self.assertEqual(body["error"], "")
+        self.assertEqual(code, 200)
+        stored = self.es.docs["nyx_user"]["alice@example.com"]
+        self.assertEqual(stored["theme"], "dark")
+        # rien d'autre ne bouge : ni le mot de passe, ni les privileges, ni la langue
+        for field in ("password", "privileges", "language", "login"):
+            self.assertEqual(stored[field], before[field], field)
+
+    def test_an_unknown_value_is_refused_before_any_write(self):
+        for value in ("purple", "", None, 42, ["dark"]):
+            code, body, _ = self.call("post", "/api/v1/cred/preferences", self.token,
+                                      {"theme": value})
+            self.assertEqual(body["error"], "invalid_value", repr(value))
+            self.assertEqual(code, 400)
+        self.assertEqual(self.es.written, [])
+
+    def test_an_empty_body_saves_nothing(self):
+        code, body, _ = self.call("post", "/api/v1/cred/preferences", self.token, {})
+        self.assertEqual(body["error"], "nothing_to_save")
+        self.assertEqual(self.es.written, [])
+
+    def test_another_account_cannot_be_targeted(self):
+        code, body, _ = self.call("post", "/api/v1/cred/preferences", self.token,
+                                  {"theme": "dark", "login": "bob@example.com",
+                                   "id": "bob@example.com"})
+        self.assertEqual(body["error"], "")
+        self.assertNotIn("theme", self.es.docs["nyx_user"]["bob@example.com"])
+        self.assertEqual(self.es.docs["nyx_user"]["alice@example.com"]["theme"], "dark")
+
+    def test_the_preference_comes_back_in_the_login_payload(self):
+        self.call("post", "/api/v1/cred/preferences", self.token, {"theme": "auto"})
+        code, body, _ = self.call("post", "/api/v1/cred/login",
+                                  body={"login": "alice@example.com", "password": PASSWORD})
+        self.assertEqual(body["cred"]["user"].get("theme"), "auto",
+                         "la console lit le theme au login : il doit y figurer")
+
+    def test_the_route_is_closed_without_a_token(self):
+        code, body, _ = self.call("post", "/api/v1/cred/preferences", None, {"theme": "dark"})
+        self.assertNotEqual(body.get("error"), "")
+        self.assertEqual(self.es.written, [])
