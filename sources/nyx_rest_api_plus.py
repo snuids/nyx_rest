@@ -81,6 +81,10 @@ v3.22.23 08/Nov/2026 Security: the public surface is closed by default — no CO
                      auto-loaded extension (WOOP answered unauthenticated calls), the Onfleet
                      webhook echoes as text/plain and needs a shared secret, ?apikey= no longer
                      accepts a session token, and the token refusals answer 401/403
+v3.22.24 08/Nov/2026 A dashboard export under 3 000 hits works again: pandas removed
+                     ExcelWriter.save() in 2.0 and the image runs 2.2.3, so kibana_load answered
+                     500; output=csv writes a CSV instead of an Excel file, the index is no longer
+                     exported as a column, and a failed export says why
 """
 
 import json

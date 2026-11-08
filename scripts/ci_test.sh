@@ -9,11 +9,12 @@
 #
 # The coverage floor is the level actually measured, never a wish: 43 % on 2026-11-02, then 48 %
 # on 2026-11-06 once `tests/test_routes_access.py` covered the publication and index-rule
-# boundaries — the two places where a routing mistake is a data leak. Raise it as tests land,
-# never lower it.
+# boundaries — the two places where a routing mistake is a data leak — then 53 % on 2026-11-08
+# once `tests/test_kibana_export.py` held the dashboard export. Raise it as tests land, never
+# lower it.
 set -eu
 
-FLOOR=48
+FLOOR=53
 
 python -m pip install --quiet -r sources/requirements-test.txt
 python -m coverage erase

@@ -28,9 +28,12 @@ from logstash_async.handler import AsynchronousLogstashHandler
 from common import loadData ,kibanaData
 from lib.export_authz import kibana_indices, load_rules, may_export
 from pg_common import loadPGData
+import state
 from config import settings
 
-VERSION="1.1.0"
+# One version, one release: this worker ships with the API image of the same tag (see
+# Dockerfilehelper), so the version it announces on the broker is the API's.
+VERSION=state.VERSION
 MODULE="NYX_Helper"
 QUEUE=["/queue/REST_LOAD_DATA","/queue/REST_LOAD_PGDATA","/queue/REST_LOAD_KIBANA"]
 
