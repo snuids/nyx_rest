@@ -26,6 +26,21 @@ class Settings(BaseSettings):
     USE_LOGSTASH: bool = False
     COOKIESECURE: bool = True
 
+    # Client extensions to load at startup, comma separated module names of `sources/extensions/`
+    # (see extensions/README.md). Empty means none: `lib/` used to be scanned for any file
+    # containing "ext" and its `config()` called, which mounted whatever had been dropped there —
+    # the WOOP module answered unauthenticated calls for two years that way.
+    EXT_MODULES: str = ""
+
+    # Browser origins allowed to call the API, comma separated. Empty means none, which is the
+    # case of the console: it is served from the same origin as the API and needs no CORS
+    # header at all. `CORS(app)` used to reflect every origin back.
+    CORS_ALLOWED_ORIGINS: str = ""
+
+    # Shared secret the Onfleet platform must present on its delivery webhooks. Empty means the
+    # webhook refuses the payload instead of forwarding it to the broker untrusted.
+    ONFLEET_WEBHOOK_SECRET: str = ""
+
     # Redis
     REDIS_IP: str = ""
 

@@ -7,7 +7,7 @@
 ![badge](https://img.shields.io/github/languages/code-size/snuids/nyx_rest)
 ![badge](https://img.shields.io/github/last-commit/snuids/nyx_rest)
 
-NYX Rest API (version 3.22.0).
+NYX Rest API (version 3.22.23).
 
 The API is the only component that reads and writes the platform configuration and the customer
 data. Its contract is described in the deployment repository under `docs/api.md`; this file covers
@@ -109,6 +109,29 @@ The query parameter is the historical form: it ends up in nginx access logs, bro
 enable the API log at `DEBUG` to see which routes still receive it (`Token passed as a query
 parameter on …`).
 
+A refused request answers **401** (`NO_TOKEN`, `UNKNOWN_TOKEN`) or **403** (`NO_PRIVILEGE`,
+`MUST_CHANGE_PASSWORD`) with the same `{"error": "<code>"}` body as before, and a `WWW-Authenticate:
+Bearer` header on a 401, so a probe or a proxy sees the refusal. A route-level error — `unable to
+post data`, `invalid record`… — still answers 200, because the console reads that body in `.then()`.
+`?apikey=` is a **machine** credential (`nyx_apikey` documents) and no longer accepts a session
+token: `/api/v1/lambdas/*` is the only route that reads it, and it is the only one that should.
+
+## Public surface
+
+What answers without a token is deliberately small, and it is closed by default:
+
+| Setting | Default | Effect |
+| --- | --- | --- |
+| `CORS_ALLOWED_ORIGINS` | *(empty)* | Origins allowed to call the API from a browser, comma separated. Empty means no `Access-Control-Allow-Origin` at all — the console is served from the same origin and needs none. The API used to reflect every origin back. |
+| `EXT_MODULES` | *(empty)* | Client extensions to mount, comma separated, from `sources/extensions/` (see its README). Empty means none. Modules used to be discovered in `lib/` by name and mounted without authentication — the WOOP/Onfleet routes answered anyone that way. |
+| `ONFLEET_WEBHOOK_SECRET` | *(empty)* | Shared secret the Onfleet platform must present (`X-Nyx-Webhook-Secret` header or `?secret=`) on `POST /api/v1/onfleet_webhook`. Empty means the payload is refused with 503 instead of being published to the broker. |
+
+`GET /api/v1/onfleet_webhook?check=…` echoes its parameter as `text/plain` with
+`X-Content-Type-Options: nosniff`: it is data Onfleet compares, not a document. It used to answer
+`text/html`, which made it a reflected XSS on the API origin.
+
+`/api/v1/healthz` and `/api/v1/metrics` are the only other unauthenticated routes.
+
 ## Probes and metrics
 
 | Endpoint | Token | Answer |
@@ -120,8 +143,10 @@ parameter on …`).
 is considered up while its life sign is younger than 30 s (the API publishes one every 5 s), which
 catches a worker that is running but has lost its STOMP connection.
 
-The counters are per worker: gunicorn runs three of them, so a Prometheus scrape of the service
-sees whichever one answers. Sum them (`sum by (instance)`) or scrape each worker by name.
+The counters are per worker — gunicorn runs three of them and a Prometheus scrape always reaches
+the same one — so every worker publishes its own into Redis (`nyx_counters`) and `/metrics` exposes
+the sum, with `nyx_counters_workers` saying how many are included. A worker silent for more than
+30 s leaves the sum, so a redeployment does not freeze its last figures in the total.
 
 ## Tests
 

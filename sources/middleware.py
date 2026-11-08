@@ -20,6 +20,18 @@ logger = logging.getLogger()
 
 BEARER_PREFIX = "bearer "
 
+# The refusals of `token_required` are answered with an HTTP status, not only with the `error`
+# field of a 200. Everything used to come back 200, so a probe, an nginx `limit_req`, a cache or
+# an alert rule saw a healthy API while every call was being refused — the refusal lived only in
+# the body, where nothing looks. The body keeps its shape (`{"error": "<code>"}`) so a client that
+# reads it, like the console, keeps working.
+AUTH_ERROR_STATUS = {
+    "NO_TOKEN": 401,
+    "UNKNOWN_TOKEN": 401,
+    "MUST_CHANGE_PASSWORD": 403,
+    "NO_PRIVILEGE": 403,
+}
+
 # Routes that may still receive the token as a query parameter: the console and the mobile app
 # were built that way. The header is preferred, and the query form is what the logs of an
 # operator reveal when a client has not been migrated.
@@ -62,25 +74,26 @@ def getAPIKey(token):
 
 
 def checkAPIKey(request):
-    if "apikey" not in request.args:
+    """True when the request carries a valid machine key (a `nyx_apikey` document).
+
+    A user token used to be accepted here as well, through `state.tokens` and the Redis
+    session keys: the route documented as "the only one that accepts `?apikey=` instead of a
+    token" therefore ran for any console session. A machine key outlives the person who
+    configured it, a session token does not; they are two credentials with two lifetimes and
+    this check now only knows the first.
+
+    The key is an Elasticsearch document id, not a shared secret compared in memory: a
+    missing document is a refusal, an unreachable cluster is a refusal too — an authorisation
+    check cannot answer "yes" because the store did not.
+    """
+    token = request.args.get("apikey")
+    if not token:
         return False
-
-    token = request.args.get('apikey')
     try:
-        api = getAPIKey(token)
-        if api is not None:
-            return True
-    except:
-        pass
-
-    with state.tokenlock:
-        if token in state.tokens:
-            return True
-        redusr = state.redisserver.get("nyx_tok_" + token)
-        if redusr is not None:
-            return True
-
-    return False
+        return getAPIKey(token) is not None
+    except Exception:
+        logger.warning("API key lookup failed for " + fingerprint(token), exc_info=True)
+        return False
 
 
 def getUserFromToken(request, token=None, fresh=False):
@@ -216,8 +229,8 @@ def token_required(*roles):
             logger.info("<<< FINISH:" + request.path)
 
             error = ''
-            if type(ret) == dict:
-                error = ret["error"]
+            if isinstance(ret, dict):
+                error = ret.get("error", "")
 
             state.requests_total += 1
             if error:
@@ -226,10 +239,19 @@ def token_required(*roles):
             if token is not None:
                 pushHistoryToELK(request, timespan, usr, token, error)
 
-            if type(ret) != dict:
+            if not isinstance(ret, dict):
                 return ret
 
             ret["timespan"] = timespan
-            return jsonify(ret)
+            response = jsonify(ret)
+            # Only the refusals of this decorator carry a status: a route that answers
+            # `{"error": "unable to post data"}` keeps its 200, because the console reads that
+            # body in `.then()` and a client that lost the habit would show nothing at all.
+            status = AUTH_ERROR_STATUS.get(error)
+            if status is not None:
+                response.status_code = status
+                if status == 401:
+                    response.headers["WWW-Authenticate"] = 'Bearer realm="nyx"'
+            return response
         return decorated_function
     return wrapper
