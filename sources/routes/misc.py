@@ -5,12 +5,13 @@ Miscellaneous routes: /test, /ui_css, /lambdas, /onfleet_webhook,
 
 import json
 import time
+import hmac
 import uuid
 import logging
 import operator
 
 import requests
-from flask import request, Response, render_template, make_response
+from flask import request, Response, render_template, make_response, jsonify
 from flask_restx import Resource, fields
 from datetime import datetime, timedelta
 
@@ -86,16 +87,46 @@ def register(app, api, name_space):
     # -----------------------------------------------------------------------
     # /onfleet_webhook
     # -----------------------------------------------------------------------
+    def onfleet_error(message, status):
+        return make_response(jsonify({"error": message}), status)
+
     @name_space.route('/onfleet_webhook')
-    @api.doc(description="When creating a webook in onfleet we need to validate through a Get call.")
+    @api.doc(description="Onfleet webhook: validation echo (GET) and delivery callbacks (POST).")
     class onfleetWebhookCreation(Resource):
         def get(self):
-            check = str(request.args.get('check'))
-            return make_response(check)
+            """Echo the value Onfleet puts in the validation URL.
+
+            `make_response(check)` with no mimetype answered `text/html`, so the route reflected
+            whatever the caller sent — `/api/v1/onfleet_webhook?check=<script>…` executed on the
+            API origin, in a browser that holds the session cookies. The value is data, not a
+            document: it goes back as `text/plain`, with `nosniff` so no browser reinterprets it.
+            """
+            check = request.args.get('check', '')
+            response = make_response(check, 200)
+            response.mimetype = "text/plain"
+            response.headers["X-Content-Type-Options"] = "nosniff"
+            return response
 
         def post(self):
-            req = json.loads(request.data.decode("utf-8"))
-            logger.info(req)
+            # The payload is published to the broker for a delivery worker to consume: without a
+            # shared secret anyone could inject one. Refusing when no secret is configured is
+            # deliberate — an unauthenticated publication is not a feature to keep by default.
+            secret = settings.ONFLEET_WEBHOOK_SECRET
+            if not secret:
+                logger.warning("onfleet_webhook: no shared secret configured, payload refused")
+                return onfleet_error("webhook not configured", 503)
+
+            provided = request.headers.get("X-Nyx-Webhook-Secret", "") or request.args.get("secret", "")
+            if not hmac.compare_digest(str(provided), str(secret)):
+                logger.warning("onfleet_webhook: refused, invalid shared secret")
+                return onfleet_error("invalid secret", 403)
+
+            try:
+                req = json.loads(request.data.decode("utf-8"))
+            except ValueError:
+                return onfleet_error("UNABLE_TO_DECODE_BODY", 400)
+
+            logger.info("onfleet_webhook: %s", req)
             state.conn.send_message("/topic/ONFLEET_WEBHOOK", json.dumps(req))
             return {'error': ""}
 

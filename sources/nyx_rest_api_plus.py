@@ -77,9 +77,12 @@ v3.22.6 01/Nov/2026  A missing document is no longer an API error, and users are
 v3.22.5 01/Nov/2026  Auth failures are actually traced (the ES client is opensearchpy, which wants body=)
 v3.22.4 01/Nov/2026  Login is protected against brute force (Redis counters per account and per IP,
                      ladder 30 s / 5 min / 1 h, 429 with Retry-After, failures traced in nyx_authfail)
+v3.22.23 08/Nov/2026 Security: the public surface is closed by default — no CORS reflection, no
+                     auto-loaded extension (WOOP answered unauthenticated calls), the Onfleet
+                     webhook echoes as text/plain and needs a shared secret, ?apikey= no longer
+                     accepts a session token, and the token refusals answer 401/403
 """
 
-import os
 import json
 import importlib
 import threading
@@ -166,7 +169,21 @@ api = Custom_API(
 
 app.register_blueprint(blueprint)
 name_space = api.namespace('api/v1', description='Main APIs')
-CORS(app)
+
+# ---------------------------------------------------------------------------
+# CORS
+# ---------------------------------------------------------------------------
+# `CORS(app)` reflected every `Origin` back, which let any page on the internet read a cross-origin
+# answer: the console is served from the same origin as this API and needs no header at all, so the
+# default is now nothing. A deployment that really has another origin (a separate dashboard host)
+# declares it in `CORS_ALLOWED_ORIGINS`, comma separated; there is no wildcard form.
+cors_origins = [origin.strip() for origin in settings.CORS_ALLOWED_ORIGINS.split(",") if origin.strip()]
+if cors_origins:
+    CORS(app, resources={r"/api/*": {"origins": cors_origins}})
+    logger.info("CORS allowed for %s", cors_origins)
+else:
+    logger.info("CORS disabled (no origin declared in CORS_ALLOWED_ORIGINS)")
+
 
 # ---------------------------------------------------------------------------
 # Redis
@@ -247,22 +264,26 @@ state.elkversion = getELKVersion(state.es)
 refresh_translations()
 
 # ---------------------------------------------------------------------------
-# Extension library scanning
+# Client extensions
 # ---------------------------------------------------------------------------
-logger.info("Scanning files in lib...")
-logger.info("========================")
+# They are declared, not discovered. `lib/` used to be scanned for any file whose name contained
+# "ext" and its `config()` was called with the API, the broker and the cluster: dropping a file
+# there mounted routes, with no authentication of its own — that is how the WOOP module answered
+# unauthenticated Onfleet calls in production for two years (it now lives in `extensions/`, see
+# extensions/README.md). A failure to load is an error, not an `info` line.
+logger.info("Loading declared extensions (%s)", settings.EXT_MODULES or "none")
+logger.info("==============================")
 
 from middleware import token_required
 
-for ext_lib in os.listdir("lib"):
-    if ".py" in ext_lib and "ext" in ext_lib:
-        logger.info("Importing 2:" + ext_lib)
-        logger.info("lib." + ext_lib.replace(".py", ""))
-        try:
-            module = importlib.import_module("lib." + ext_lib.replace(".py", ""))
-            module.config(api, state.conn, state.es, state.redisserver, token_required)
-        except Exception as e:
-            logger.info(e)
+for module_name in [name.strip() for name in settings.EXT_MODULES.split(",") if name.strip()]:
+    qualified = module_name if "." in module_name else "extensions." + module_name
+    logger.info("Importing extension %s", qualified)
+    try:
+        module = importlib.import_module(qualified)
+        module.config(api, state.conn, state.es, state.redisserver, token_required)
+    except Exception:
+        logger.error("Unable to load the extension %s", qualified, exc_info=True)
 
 # ---------------------------------------------------------------------------
 # Gunicorn / direct run
