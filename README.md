@@ -83,6 +83,14 @@ likewise checks app privileges; configured extra stream roots are available to a
 Generic SQL CRUD requests bind values as query parameters and safely quote table and column names
 for both PostgreSQL and SQL Server.
 
+A `pg_search` binds the `${FILTER}` token of the application's query the same way: the token — with
+the quotes around it — becomes a parameter carrying `%term%`, and a token this module cannot bind
+(a `${FILTER}` inside a longer literal) is refused instead of interpolated. Only a column the
+application **declares** (`headercolumns`, plus `pkey`) may be a sort key; anything else is dropped
+rather than concatenated into `ORDER BY`. `size` and `page` are read as integers inside bounds, so
+neither can carry SQL. `tests/test_pg_search.py` holds the statements the engine hands to the
+driver, not just their results.
+
 Two-factor login rejects missing or expired verification codes and consumes a valid code after
 use. Verification codes are never written to the log.
 

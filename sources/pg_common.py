@@ -16,6 +16,7 @@ except ImportError:
 from datetime import timedelta
 from cachetools import cached, LRUCache, TTLCache
 from config import settings
+from lib.pg_search import bind_filter, page_values, sort_clause
 
 sql_server_connections={}
 
@@ -72,39 +73,40 @@ def loadPGData(es,appid,pgconn,conn,data,download,is_rest_api,user,outputformat,
     start=datetime.datetime.now().timestamp()
 
     logger.info("LOAD PG DATA:"+appid)
-    maxsize=1000
-    page=1
-    if data!=None and "size" in data:
-        maxsize=data["size"]
-
-    if data!=None and "page" in data:
-        page=data["page"]
+    # `data["size"]` used to travel straight into `LIMIT`/`TOP` as a string: a second way of
+    # writing SQL into the statement. It is a number now, inside bounds.
+    maxsize, page = page_values(
+        data.get("size") if isinstance(data, dict) else None,
+        data.get("page") if isinstance(data, dict) else None,
+    )
 
     app=getAppByID(es,appid)
 
-    query=app["_source"]["config"]["sql"]
-
-    dbtype=app["_source"]["config"]["databaseType"]
+    config = app["_source"]["config"]
+    query=config.get("sql", "")
+    dbtype=config.get("databaseType", "postgres")
     logger.info("Database Type:"+dbtype)
     if dbtype == "sqlserver":
         sql_server_connection=get_sql_server_connection(app)
-    
-        
 
-    if data != None and "query" in data:
-        if len(data["query"])>0:
-            query=query.replace("${FILTER}","%"+data["query"]+"%")
-        else:
-            query=query.replace("${FILTER}","%")
-    else:
-        query=query.replace("${FILTER}","%")
+    # The search term is bound, never interpolated: `'%` + term + `%'` inside the statement is
+    # what let a search box run `pump' OR '1'='1` on any SQL application (see lib/pg_search.py).
+    try:
+        query, params = bind_filter(query, (data or {}).get("query", ""), dbtype)
+    except ValueError:
+        logger.error("Unable to bind the ${FILTER} token of " + appid)
+        return {'error': "invalid search query", "records": [], "aggs": None, "total": 0,
+                "colnames": []}
+    # `execute(sql)` when there is nothing to bind: a driver that formats the statement only does
+    # so when parameters are passed, and an application without `${FILTER}` must not change.
+    bind = (params,) if params else ()
 
-    order=query.lower().rfind("order by ")
+    orderpos=query.lower().rfind("order by ")
     query1=query
     query2=""
-    if order!=-1:
-        query1=query[:order]
-        query2=query[order:]
+    if orderpos!=-1:
+        query1=query[:orderpos]
+        query2=query[orderpos:]
 
 
     rangequery=""
@@ -134,14 +136,21 @@ def loadPGData(es,appid,pgconn,conn,data,download,is_rest_api,user,outputformat,
             logger.info(query1)
 
 
-    fields=[_["field"] for _ in app["_source"]["config"]["headercolumns"]]
+    fields=[_["field"] for _ in config.get("headercolumns", [])]
+
+    pkey=config.get("pkey", "_id")
+    # Only a declared column may be sorted on — the console sends what it displays — and it is
+    # quoted: `ORDER BY ` + column + ` DESC` was the second injection point of this function.
+    order = sort_clause(data.get("sort") if isinstance(data, dict) else None,
+                        fields+[pkey], dbtype)
+    if not pkey in fields:
+        fields.append(pkey)
 
     query=query1+query2
 
     hits=[]
 
     sqlcount=query1
-    queryselect=sqlcount.lower().index("select")
     queryfrom=sqlcount.lower().index("from")
     sqlcount2=sqlcount[0:len("select")]+" count(*) "+sqlcount[queryfrom:]
 
@@ -150,7 +159,7 @@ def loadPGData(es,appid,pgconn,conn,data,download,is_rest_api,user,outputformat,
     aggtime=None
     aggtimeval=10
 
-    if "graphicChecked" in app["_source"] and app["_source"]["graphicChecked"]:
+    if app["_source"].get("graphicChecked") and isinstance(data, dict) and "range" in data:
 
         totalminutes=(endr-startr)/(1000*60)
         if dbtype=="sqlserver":
@@ -203,7 +212,7 @@ def loadPGData(es,appid,pgconn,conn,data,download,is_rest_api,user,outputformat,
     if dbtype=="sqlserver":
         with sql_server_connection.cursor() as cursor:
             logger.info(sqlcount2)
-            cursor.execute(sqlcount2)
+            cursor.execute(sqlcount2, *bind)
             if "group" in sqlcount2.lower():
                 ress=cursor.fetchall()
                 count=len(ress)
@@ -214,7 +223,7 @@ def loadPGData(es,appid,pgconn,conn,data,download,is_rest_api,user,outputformat,
 
             if len(sqlcounthist)>0:
                 logger.info(sqlcounthist)
-                cursor.execute(sqlcounthist)    
+                cursor.execute(sqlcounthist, *bind)    
                 arecs = cursor.fetchall()   
                 
                 aggs=[]
@@ -227,16 +236,6 @@ def loadPGData(es,appid,pgconn,conn,data,download,is_rest_api,user,outputformat,
 
             offset=""
 
-            
-
-            order=""
-            if data!=None and "sort" in data and "column" in data["sort"]:
-                order=" ORDER BY "+data["sort"]["column"]
-                if "order" in data["sort"] and data["sort"]["order"]=="descending":
-                    order+=" DESC "
-                #page=data["page"]
-    
-
             #cursor.execute(query+order+" LIMIT "+str(maxsize)+offset)    
             sqlstr=query+order
             if page!=1:
@@ -246,7 +245,7 @@ def loadPGData(es,appid,pgconn,conn,data,download,is_rest_api,user,outputformat,
                 sqlstr+=offset
             else:
                 sqlstr=sqlstr.replace("select ","select TOP "+str(maxsize)+offset+" ")
-            cursor.execute(sqlstr)    
+            cursor.execute(sqlstr, *bind)    
             recs = cursor.fetchall() 
             colnames = [desc[0] for desc in cursor.description]
 
@@ -254,7 +253,7 @@ def loadPGData(es,appid,pgconn,conn,data,download,is_rest_api,user,outputformat,
     else:
         with pgconn.cursor() as cursor:
             logger.info(sqlcount2)
-            cursor.execute(sqlcount2)
+            cursor.execute(sqlcount2, *bind)
             if "group" in sqlcount2.lower():
                 ress=cursor.fetchall()
                 count=len(ress)
@@ -265,7 +264,7 @@ def loadPGData(es,appid,pgconn,conn,data,download,is_rest_api,user,outputformat,
 
             if len(sqlcounthist)>0:
                 logger.info(sqlcounthist)
-                cursor.execute(sqlcounthist)    
+                cursor.execute(sqlcounthist, *bind)    
                 arecs = cursor.fetchall()   
                 
                 aggs=[]
@@ -281,27 +280,12 @@ def loadPGData(es,appid,pgconn,conn,data,download,is_rest_api,user,outputformat,
             if page!=1:
                 offset=" OFFSET %d" %((page-1)*maxsize)
 
-            order=""
-            if data!=None and "sort" in data and "column" in data["sort"]:
-                order=" ORDER BY "+data["sort"]["column"]
-                if "order" in data["sort"] and data["sort"]["order"]=="descending":
-                    order+=" DESC "
-                #page=data["page"]
-    
-
-            cursor.execute(query+order+" LIMIT "+str(maxsize)+offset)    
+            cursor.execute(query+order+" LIMIT "+str(maxsize)+offset, *bind)    
             recs = cursor.fetchall() 
             colnames = [desc[0] for desc in cursor.description]
 
         pgconn.commit()
 
-    pkey="_id"
-    if "pkey" in app["_source"]["config"]:
-        pkey=app["_source"]["config"]["pkey"]
-
-    if not pkey in fields:
-        fields.append(pkey)
-    
     fieldsindex=[]
     for field in fields:
         try:
