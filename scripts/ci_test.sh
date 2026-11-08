@@ -11,11 +11,11 @@
 # on 2026-11-06 once `tests/test_routes_access.py` covered the publication and index-rule
 # boundaries — the two places where a routing mistake is a data leak — then 53 % once
 # `tests/test_kibana_export.py` held the dashboard export, then 56 % the same day once
-# `tests/test_pg_search.py` held the SQL the `pg_search` engine runs. Raise it as tests land, never
-# lower it.
+# `tests/test_pg_search.py` held the SQL the `pg_search` engine runs, then 58 % once the GitHub
+# sign-in had its own tests. Raise it as tests land, never lower it.
 set -eu
 
-FLOOR=56
+FLOOR=58
 
 python -m pip install --quiet -r sources/requirements-test.txt
 python -m coverage erase

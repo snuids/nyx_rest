@@ -122,6 +122,12 @@ class FakeES:
 
     # -- writing ---------------------------------------------------------
     def index(self, index=None, body=None, id=None, doc_type=None, **kwargs):
+        if "document" in kwargs:
+            # The real client is opensearchpy: it wants `body=`, and `document=` raises. Some
+            # callers try elasticsearch-py's spelling first inside a `try/except TypeError`
+            # (`record_auth_failure`), so a fake that accepted both would silently swallow the
+            # write and the test would assert on a document that was never sent.
+            raise TypeError("index() got an unexpected keyword argument 'document'")
         parsed = body
         if isinstance(body, str):
             try:

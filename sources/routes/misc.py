@@ -145,6 +145,11 @@ def register(app, api, name_space):
                 'welcome': state.WELCOME,
                 'icon': state.ICON,
                 'elastic_version': state.elkversion,
+                # The console shows the GitHub button only when the API can run the exchange; the
+                # client id stays server-side (the sign-in URL is asked for at start-up).
+                'login': {'github': bool(settings.GITHUB_CLIENT_ID
+                                         and settings.GITHUB_CLIENT_SECRET
+                                         and settings.GITHUB_REDIRECT_URI)},
                 # Legal notice: the notice displays them if they are filled in,
                 # otherwise it keeps its "à compléter" text.
                 'privacy': {

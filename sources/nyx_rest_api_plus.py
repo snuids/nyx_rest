@@ -85,6 +85,10 @@ v3.22.24 08/Nov/2026 A dashboard export under 3 000 hits works again: pandas rem
                      ExcelWriter.save() in 2.0 and the image runs 2.2.3, so kibana_load answered
                      500; output=csv writes a CSV instead of an Excel file, the index is no longer
                      exported as a column, and a failed export says why
+v3.22.26 08/Nov/2026 GitHub sign-in: an existing account signs in from its GitHub identity
+                     (GET /cred/oauth/state returns the URL and binds a one-time state to the
+                     browser, POST /cred/login_github finishes the session); the stub that answered
+                     a hard-coded identity and logged the provider's answers is gone
 v3.22.25 08/Nov/2026 Security: the SQL of a pg_search is no longer built with the request body —
                      the ${FILTER} term is bound, the sort column must be declared by the
                      application, and size/page are integers inside bounds. The worker image is
