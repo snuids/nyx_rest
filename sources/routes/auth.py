@@ -4,18 +4,19 @@ reset/change password, and login helper functions.
 """
 
 import json
+import hmac
 import uuid
 import random
 import logging
+import secrets
 
 import httplib2
 import requests
-import jwt
 from oauth2client import client
 from passlib.hash import pbkdf2_sha256
 from flask import request, jsonify, make_response
 from flask_restx import Resource, fields
-from datetime import datetime, timedelta
+from datetime import datetime
 
 import state
 from config import settings
@@ -29,6 +30,8 @@ from auth.auth_ad import authenticate_ad
 from auth.double_phase import verify_double_code
 from auth.role_mapper import extract_roles_from_ad
 import login_guard as guard
+from lib import github_oauth
+from es_read import find_user_by_login
 
 logger = logging.getLogger()
 
@@ -58,6 +61,35 @@ def record_auth_failure(login, ip, reason, user_agent=""):
             state.es.index(index=index, body=doc)
     except Exception:
         logger.warning("authentication failure not recorded", exc_info=True)
+
+
+OAUTH_STATE_TTL = 600        # ten minutes between the redirect and the callback
+
+
+def github_configured():
+    """True when the three settings the sign-in needs are present."""
+    return bool(settings.GITHUB_CLIENT_ID and settings.GITHUB_CLIENT_SECRET
+                and settings.GITHUB_REDIRECT_URI)
+
+
+def find_account(es, login, email, elkversion):
+    """The `nyx_user` document behind a GitHub identity, or `None`.
+
+    The same pair of lookups as the password route: by document id first, then by
+    `login.keyword` — eight accounts are indexed under their e-mail while their `login` field holds
+    a short name. GitHub is not asked twice for the same answer.
+    """
+    for candidate in github_oauth.candidates(login, email):
+        try:
+            if elkversion >= 7:
+                return es.get(index="nyx_user", id=candidate)
+            return es.get(index="nyx_user", doc_type="doc", id=candidate)
+        except Exception:
+            pass
+        hit = find_user_by_login(es, candidate, elkversion)
+        if hit is not None:
+            return hit
+    return None
 
 
 def setACookie(privilege, privileges, resp, token):
@@ -121,46 +153,110 @@ def register(api, name_space):
         'app': fields.String(description="The app tag.", required=False),
     })
 
-    @name_space.route('/cred/oauth/<string:action>/<string:social>', methods=['POST'])
-    class loginOAuthRest(Resource):
-        def post(self, action, social):
-            logger.info(">> OAUTH LOGIN IN")
-            data = json.loads(request.data.decode("utf-8"))
+    @name_space.route('/cred/oauth/state', methods=['GET'])
+    @api.doc(description="Start a GitHub sign-in: the URL to open, and the state cookie that goes "
+                         "with it.")
+    class loginOAuthState(Resource):
+        def get(self):
+            """The browser is sent to GitHub with a one-time `state`, kept here for ten minutes.
 
-            post_data = {
-                "client_secret": settings.OAUTH_CLIENT_SECRET,
-                "client_id": data["clientId"],
-                "code": data["code"],
-            }
+            The state is what stops the callback from being a login CSRF: an attacker who prepares
+            a link with *their* code cannot know the value this browser was given, and the value is
+            also written to an HttpOnly cookie, so a state obtained elsewhere does not work here.
+            """
+            if not github_configured():
+                logger.info("GitHub sign-in asked for but not configured")
+                return {'error': 'github login not configured'}
 
-            r = requests.post('https://github.com/login/oauth/access_token', data=post_data)
-            logger.info("GitHub access token exchange status: %s", r.status_code)
-            dict_ = {x[0]: x[1] for x in [x.split("=") for x in r.text.split("&")]}
+            oauth_state = secrets.token_urlsafe(24)
+            try:
+                state.redisserver.set("nyx_oauth_state_" + oauth_state, "1", OAUTH_STATE_TTL)
+            except Exception:
+                logger.error("Unable to store the GitHub sign-in state", exc_info=True)
+                return {'error': 'unable to start the sign-in'}
 
-            r2 = requests.get('https://api.github.com/user?access_token=' + dict_["access_token"])
-            logger.info(r2.text)
+            try:
+                url = github_oauth.authorize_url(settings.GITHUB_CLIENT_ID,
+                                                 settings.GITHUB_REDIRECT_URI, oauth_state)
+            except ValueError:
+                return {'error': 'github login not configured'}
 
-            r3 = requests.get(
-                'https://api.github.com/user/emails?access_token=' + dict_["access_token"]
-            )
-            logger.info(r3.text)
+            response = make_response(jsonify({'error': '', 'url': url}))
+            response.set_cookie('nyx_oauth_state', oauth_state, max_age=OAUTH_STATE_TTL,
+                                secure=state.COOKIESECURE, httponly=True, samesite='Lax')
+            return response
 
-            token = jwt.encode(
-                {
-                    'sub': "",
-                    'iat': datetime.utcnow(),
-                    'exp': datetime.utcnow() + timedelta(minutes=30),
-                },
-                settings.JWT_SECRET,
-            )
+    githubLoginAPI = api.model('github_login_model', {
+        'code': fields.String(description="The code GitHub put on the redirect.", required=True),
+        'state': fields.String(description="The state returned with it.", required=True),
+        'app': fields.String(description="The app tag.", required=False),
+    })
 
-            return jsonify({
-                'id': 1,
-                'name': "Arnaud Marchand",
-                'email': "",
-                'created_at': datetime.utcnow(),
-                'access_token': dict_["access_token"],
-            })
+    @name_space.route('/cred/login_github', methods=['POST'])
+    @api.doc(description="Sign in with GitHub. Only an existing account may sign in.")
+    @api.expect(githubLoginAPI)
+    class loginGithubRest(Resource):
+        def post(self):
+            logger.info(">> LOGIN IN GITHUB")
+            try:
+                data = json.loads(request.data.decode("utf-8"))
+            except ValueError:
+                return {'error': 'Bad Request'}
+            if not isinstance(data, dict):
+                return {'error': 'Bad Request'}
+
+            code = data.get('code') or ''
+            provided = data.get('state') or ''
+            ip = guard.client_ip(request.headers, request.remote_addr)
+            agent = request.headers.get("User-Agent")
+
+            if not code or not provided or not github_configured():
+                return {'error': 'Bad Credentials'}
+
+            # One use, one browser: the state must be the one this browser was given.
+            try:
+                stored = state.redisserver.get("nyx_oauth_state_" + provided)
+                state.redisserver.delete("nyx_oauth_state_" + provided)
+            except Exception:
+                logger.error("Unable to verify the GitHub sign-in state", exc_info=True)
+                return {'error': 'unable to verify the sign-in'}
+            cookie = request.cookies.get('nyx_oauth_state', '')
+            if stored is None or not hmac.compare_digest(str(provided), str(cookie)):
+                record_auth_failure("github", ip, "OAUTH_STATE", agent)
+                state.auth_failures_total += 1
+                guard.delay()
+                return {'error': 'Bad Credentials'}
+
+            try:
+                with requests.Session() as session:
+                    token = github_oauth.exchange_code(
+                        session, settings.GITHUB_CLIENT_ID, settings.GITHUB_CLIENT_SECRET,
+                        code, settings.GITHUB_REDIRECT_URI,
+                    )
+                    login, email = github_oauth.fetch_identity(session, token)
+            except github_oauth.GithubError:
+                record_auth_failure("github", ip, "GITHUB_EXCHANGE", agent)
+                state.auth_failures_total += 1
+                guard.delay()
+                return {'error': 'Bad Credentials'}
+
+            # The token has done its work; it is not stored anywhere and never becomes the session
+            # token: the platform mints its own (finalize_login).
+            usr = find_account(state.es, login, email, state.elkversion)
+            if usr is None:
+                # Only an existing account signs in: GitHub says who you are, `nyx_user` says what
+                # you may open, and an unknown account has no privileges to grant.
+                logger.warning("GitHub sign-in for %s (%s): no NYX account", login, email or "no e-mail")
+                record_auth_failure(login, ip, "NO_ACCOUNT_GITHUB", agent)
+                state.auth_failures_total += 1
+                guard.delay()
+                return {'error': 'Bad Credentials'}
+
+            account = usr["_source"]
+            logger.info("GitHub sign-in: %s -> %s", login, account.get("login"))
+            return finalize_login(usr, {'login': account.get('login', login),
+                                        'app': data.get('app', 'console')},
+                                  state.es, state.conn)
 
     @name_space.route('/cred/login_google', methods=['POST'])
     class loginGoogleRest(Resource):

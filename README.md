@@ -146,6 +146,25 @@ What answers without a token is deliberately small, and it is closed by default:
 
 `/api/v1/healthz` and `/api/v1/metrics` are the only other unauthenticated routes.
 
+## GitHub sign-in
+
+An account can sign in with its GitHub identity instead of a password, **if the account already
+exists** in `nyx_user` — GitHub says who you are, the platform decides what you may open, and a
+stranger's identity gets `Bad Credentials` like a wrong password.
+
+```shell
+GITHUB_CLIENT_ID=...        # the OAuth app's client id
+GITHUB_CLIENT_SECRET=...    # its secret — never reaches the browser
+GITHUB_REDIRECT_URI=https://HOST/oauth   # the URL registered on the app, the console's page
+```
+
+`GET /api/v1/cred/oauth/state` returns `{url}` — the GitHub authorize URL — and sets a one-time
+`nyx_oauth_state` cookie (HttpOnly, SameSite=Lax, 10 minutes). `POST /api/v1/cred/login_github`
+`{code, state}` exchanges the code, keeps only the identity (the GitHub token is used and dropped),
+finds the account by its verified e-mail and then by `login.keyword`, and finishes the session with
+the same `finalize_login` as a password login. `/api/v1/config` carries `login.github`, so the
+console shows the button only when the three settings are present.
+
 ## Probes and metrics
 
 | Endpoint | Token | Answer |

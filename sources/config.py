@@ -103,7 +103,15 @@ class Settings(BaseSettings):
     # Onfleet
     ONFLEET_APIKEY: str = ""
 
-    # GitHub OAuth / JWT signing
+    # GitHub sign-in (OAuth app). All three are required to enable the button: the console asks
+    # `GET /api/v1/cred/oauth/state` for the URL, so the client id never reaches the bundle.
+    GITHUB_CLIENT_ID: str = ""
+    GITHUB_CLIENT_SECRET: str = ""
+    # The URL registered on the GitHub OAuth app — the console's `/oauth` page, absolute.
+    GITHUB_REDIRECT_URI: str = ""
+
+    # Kept for the (now removed) GitHub token exchange and for any JWT a client may ask for; the
+    # sign-in itself mints a session token, not a JWT.
     OAUTH_CLIENT_SECRET: str = ""
     JWT_SECRET: str = ""
 
