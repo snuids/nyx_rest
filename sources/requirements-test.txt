@@ -2,3 +2,6 @@
 # built from Dockerfile7, where everything else (flask, pandas, psycopg2, passlib, ldap3,
 # tzlocal…) is already installed from requirements7.txt.
 coverage==7.17.0
+# Reads the exported workbooks back (sources/common.py writes them with xlsxwriter; the image
+# ships no reader, and the tests must open what they produced).
+openpyxl==3.1.5

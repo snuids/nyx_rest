@@ -89,6 +89,12 @@ use. Verification codes are never written to the log.
 `/api/v1/files` requires a valid `token` query parameter for both downloads (GET) and uploads
 (POST).
 
+`POST /api/v1/kibana_load?output=xlsx|csv` writes the dashboard as one workbook with **one sheet
+per panel**, or as one CSV stacking the panels (a CSV has no sheets). Above 3 000 hits the export
+is mailed by `nyx_rest_helper` instead. Below that threshold the direct path answered 500 from
+3.21.11 to 3.22.23 — it called `ExcelWriter.save()`, removed in pandas 2.0, and the image runs
+2.2.3; `tests/test_kibana_export.py` now holds both branches.
+
 `/api/v1/streamfile` allows files under `/logs` by default. To stream files from other
 directories, set `STREAM_ALLOWED_ROOTS` to a comma-separated list of allowed roots (include
 `/logs` if log streaming should remain available). File-system app roots are also allowed for
@@ -160,7 +166,7 @@ mount the real Flask application over fake Elasticsearch and fake Redis (`tests/
 so they need flask, pandas and the rest of `requirements7.txt` — without them they skip silently,
 which is why the CI fails on any skip.
 
-Coverage is measured by `scripts/ci_test.sh` and gated at 40 % (43 % on 2026-11-02). Raise the
+Coverage is measured by `scripts/ci_test.sh` and gated at 53 % (54 % on 2026-11-08). Raise the
 floor as tests land, never lower it.
 
 ## Language

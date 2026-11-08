@@ -4,7 +4,6 @@ import pytz
 import tzlocal
 import logging
 import datetime
-import traceback
 import pandas as pd
 from datetime import datetime
 from datetime import timedelta
@@ -358,6 +357,35 @@ def loadData(es,conn,index,data,doc_type,download,cui,is_rest_api,user,outputfor
     return {'error':"","took":round(datetime.now().timestamp()-start,2),"total":total,"type":"direct","url":url,"file":OUTPUT_FOLDER+outputname}
 
 
+def write_export(frames, path, outputformat):
+    """Writes the frames of an export to `path`, in `outputformat`.
+
+    * `xlsx` — one sheet per frame, with `xlsxwriter`, the engine the image ships;
+    * anything else — one CSV for the whole export: the sub-responses of an msearch are stacked
+      and their columns unioned, because a CSV has no sheets.
+
+    `index=False` everywhere. pandas would otherwise write the DataFrame index as a first,
+    unnamed column, which the console then shows as a stray column in the user's export.
+    """
+    if outputformat == "xlsx":
+        # `ExcelWriter.save()` was removed in pandas 2.0, and the image has run 2.2.x since
+        # 3.21.11: calling it raised `AttributeError: 'XlsxWriter' object has no attribute
+        # 'save'`, so every dashboard export under 3 000 hits answered 500. `close()` is what
+        # writes the file.
+        writer = pd.ExcelWriter(
+            path, engine="xlsxwriter",
+            engine_kwargs={"options": {"remove_timezone": True}},
+        )
+        try:
+            for position, frame in enumerate(frames or [pd.DataFrame()]):
+                frame.to_excel(writer, sheet_name="Sheet" + str(position + 1), index=False)
+        finally:
+            writer.close()
+        return
+
+    pd.concat(frames or [pd.DataFrame()], ignore_index=True, sort=False).to_csv(path, index=False)
+
+
 def kibanaData(es,conn,matchrequest,user,outputformat,is_rest_api,OUTPUT_URL,OUTPUT_FOLDER):
     logger=logging.getLogger()
     starttime=int(datetime.now().timestamp()*1000)
@@ -388,11 +416,11 @@ def kibanaData(es,conn,matchrequest,user,outputformat,is_rest_api,OUTPUT_URL,OUT
 
 
 
-    except Exception as exc:
-        logger.error("Unable to execute msearch results.")
-        logger.error(exc)
-        logger.error( traceback.format_exc())
-        return None
+    except Exception:
+        # Returning None here answered the route with a 500 and an empty body: the user saw a
+        # failure with nothing to read, and the cause lived only in the log.
+        logger.error("Unable to execute msearch results.", exc_info=True)
+        return {'error': "unable to run the dashboard query", "records": 0, "type": "direct"}
 
     pds=[]       
     for response in matchres["responses"]:
@@ -408,7 +436,10 @@ def kibanaData(es,conn,matchrequest,user,outputformat,is_rest_api,OUTPUT_URL,OUT
         for df in pds:
             #if df == res: Unfortunately, this function does not work on high volume
             if df.shape[0] == res.shape[0] and df.shape[1] == res.shape[1]:
-                logger.info("DF are identical")
+                # Two panels of the dashboard returned the same shape: one of them is dropped.
+                # The comparison is a proxy (a real equality check is too slow on an export), so
+                # the log is the only place where this can be noticed.
+                logger.warning("Two panels returned the same shape: one is not exported")
                 found=True
                 break                            
 
@@ -418,13 +449,14 @@ def kibanaData(es,conn,matchrequest,user,outputformat,is_rest_api,OUTPUT_URL,OUT
 
     outputname="export_"+str(uuid.uuid4())+'.'+outputformat
     url=OUTPUT_URL+outputname
+    outputpath=OUTPUT_FOLDER+outputname
 
-    logger.info("Saving:"+OUTPUT_FOLDER+outputname)
-    writer = pd.ExcelWriter(OUTPUT_FOLDER+outputname)
-    for i in range(0,len(pds)):
-        pds[i].to_excel(writer, sheet_name='Sheet'+str(i+1))
-    writer.save()
-    writer.close()
+    logger.info("Saving:"+outputpath)
+    try:
+        write_export(pds, outputpath, outputformat)
+    except Exception:
+        logger.error("Unable to write the dashboard export", exc_info=True)
+        return {'error': "unable to write the export", "records": hits, "type": "direct"}
     exporttime=int(datetime.now().timestamp()*1000)
     
     timing={"load":(elktime-starttime)

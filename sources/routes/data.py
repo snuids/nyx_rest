@@ -346,7 +346,15 @@ def register(app, api, name_space):
         if token is None:
             return {"error": "NO_TOKEN"}
         logger.info("Kibana msearch key for token " + fingerprint(token))
-        matchrequest = state.redisserver.get("nyx_kib_msearch" + token).decode('utf-8')
+        matchrequest = state.redisserver.get("nyx_kib_msearch" + token)
+        if matchrequest is None:
+            # The key is written by nginx when the console asks for an export and lives for as
+            # long as the request. Without it there is no msearch to run: `.decode()` on None
+            # raised AttributeError, which the worker answered with a 500 and an empty body —
+            # an export that failed without saying why.
+            logger.warning("kibana_load: no msearch request for token " + fingerprint(token))
+            return {"error": "NO_EXPORT_REQUEST"}
+        matchrequest = matchrequest.decode('utf-8')
         logger.info(matchrequest)
         return kibanaData(
             state.es, state.conn, matchrequest, user, outputformat,

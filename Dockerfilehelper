@@ -1,19 +1,22 @@
-FROM python:3.6.1-slim
-MAINTAINER snuids
-
-RUN apt-get update
-RUN apt-get install -y vim
-
-#COPY ./requirements.txt /opt/sources/requirements.txt
-COPY ./sources/requirements7.txt /opt/sources/requirements7.txt
-
-RUN pip install -r /opt/sources/requirements7.txt 
-
-COPY ./sources /opt/sources
-RUN rm -d -r /opt/sources/logs
-RUN rm -d -r /opt/sources/outputs
-RUN mkdir  /opt/sources/logs
+# The export worker (`nyx_rest_helper.py`) is not a separate program: it imports `common.py`,
+# `pg_common.py` and `lib/export_authz.py`, and it writes the exported files with the same pandas
+# as the API. It has to run the same code, with the same dependencies.
+#
+# It used to be built by hand from `Dockerfile7` — the `python:3.6.1-slim` base below could not
+# install `requirements7.txt` any more — so nobody rebuilt it when the API changed and its copy of
+# those modules drifted. The dashboard export under 3 000 hits was fixed in the API in 3.22.24 and
+# stayed broken in the worker until this file inherited the API image instead of duplicating it.
+#
+# The build therefore starts from the API image of the same release: CI pushes
+# `snuids/nyx_rest:vX.Y.Z` first, then builds this one with `--build-arg API_VERSION=X.Y.Z`.
+ARG API_VERSION
+FROM snuids/nyx_rest:v${API_VERSION}
 
 WORKDIR /opt/sources
+
+# The sources of the commit being built, not the copy frozen in the base image.
+RUN rm -rf /opt/sources
+COPY ./sources /opt/sources
+RUN rm -rf /opt/sources/logs /opt/sources/outputs && mkdir /opt/sources/logs
 
 CMD ["python", "nyx_rest_helper.py"]
