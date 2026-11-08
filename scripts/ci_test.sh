@@ -9,12 +9,13 @@
 #
 # The coverage floor is the level actually measured, never a wish: 43 % on 2026-11-02, then 48 %
 # on 2026-11-06 once `tests/test_routes_access.py` covered the publication and index-rule
-# boundaries — the two places where a routing mistake is a data leak — then 53 % on 2026-11-08
-# once `tests/test_kibana_export.py` held the dashboard export. Raise it as tests land, never
+# boundaries — the two places where a routing mistake is a data leak — then 53 % once
+# `tests/test_kibana_export.py` held the dashboard export, then 56 % the same day once
+# `tests/test_pg_search.py` held the SQL the `pg_search` engine runs. Raise it as tests land, never
 # lower it.
 set -eu
 
-FLOOR=53
+FLOOR=56
 
 python -m pip install --quiet -r sources/requirements-test.txt
 python -m coverage erase
