@@ -104,6 +104,10 @@ v3.22.28 09/Nov/2026 Elasticsearch 6 is no longer supported: the 26 `if elkversi
                      installed client is opensearch-py 2.x, whose calls have no `doc_type`
                      parameter at all — the ES6 branches could only raise. The API now refuses to
                      start on a cluster below 7 instead of answering 400s on every read.
+v3.22.29 09/Nov/2026 A facet request on an index created without a mapping answers instead of
+                     returning 500: `get_mappings` read `mappings.properties` unguarded, and a
+                     `KeyError` came out of `queryFilter`. An unknown mapping now means "no
+                     `.keyword` sub-field", which is what the facet code already handles.
 """
 
 import json

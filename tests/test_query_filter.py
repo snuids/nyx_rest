@@ -55,6 +55,35 @@ AGGREGATIONS = {
 
 
 @unittest.skipUnless(data_routes is not None, "routes.data non importable")
+class UnmappedIndexTests(RouteTestCase):
+    """An index created without a mapping: the facets are built on the raw field names."""
+
+    route_modules = (data_routes,)
+
+    def setUp(self):
+        super().setUp()
+        self.es.docs["nyx_app"] = APPS
+        # `get_mapping` returns {"mappings": {}} — no `properties` at all, which used to raise a
+        # KeyError out of `get_mappings` and answer a 500.
+        self.es.indices.get_mapping = lambda index=None, **kwargs: {index: {"mappings": {}}}
+        # the fake cluster answers under the field names the route asks for
+        self.es.aggregations.update({"dossier": {
+            "statut": [{"key": "actif", "doc_count": 3}],
+            "ville": [{"key": "Bruxelles", "doc_count": 2}],
+        }})
+        self.user = self.login_as("alice@example.com", ["YUL"])
+
+    def test_a_screen_on_an_unmapped_index_answers_and_facets_the_raw_fields(self):
+        code, body, _ = self.call("post", "/api/v1/queryFilter/facets", self.user, {})
+
+        self.assertEqual(code, 200, body)
+        # one search per selector: without a mapping, each is faceted on the field itself
+        faceted = [list(body["aggregations"])[0]
+                   for index, body in self.es.searches if index == "dossier"]
+        self.assertEqual(sorted(faceted), ["statut", "ville"])
+
+
+@unittest.skipUnless(data_routes is not None, "routes.data non importable")
 class QueryFilterTests(RouteTestCase):
     route_modules = (data_routes,)
 
