@@ -17,12 +17,13 @@ def get_mappings(es,index):
     finalmaps={}
 
     # One shape only since Elasticsearch 6 is no longer supported: the properties sit directly
-    # under `mappings`, not under a document type.
+    # under `mappings`, not under a document type. An index created without a mapping has none of
+    # that — it used to raise a KeyError out of a facet request, which the console showed as a 500.
     maps=es.indices.get_mapping(index)
-    maps2=maps[list(maps)[0]]["mappings"]["properties"]
-    for field in maps2:
-        if "type" in maps2[field]:
-            finalmaps[field]=maps2[field]["type"]
+    properties=maps[list(maps)[0]].get("mappings",{}).get("properties",{})
+    for field in properties:
+        if "type" in properties[field]:
+            finalmaps[field]=properties[field]["type"]
 
     return finalmaps
 
