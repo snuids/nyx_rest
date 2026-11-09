@@ -31,7 +31,7 @@ from auth.double_phase import verify_double_code
 from auth.role_mapper import extract_roles_from_ad
 import login_guard as guard
 from lib import github_oauth
-from es_read import find_user_by_login
+from es_read import find_user_by_login, fetch_document
 
 logger = logging.getLogger()
 
@@ -102,6 +102,28 @@ def setACookie(privilege, privileges, resp, token):
         logger.info(a)
 
 
+def user_document_id(user):
+    """The `nyx_user` document id behind a token payload.
+
+    `id` in a payload is the string typed in the login form, which is not always the document
+    id: eight production accounts are indexed under their address while their `login` field
+    carries a short name (`amarchand@icloud.com` -> `amarchand`), and the login form accepts
+    either. Writing a preference on `user["id"]` then answers 404
+    `document_missing_exception` — what the console showed as `storage_failed`. `docid`, set
+    at login, carries the document id from now on; a token issued before that is resolved by
+    the same by-login fallback the login route uses, so an open session needs no re-login.
+    """
+    if not user:
+        return None
+    if user.get("docid"):
+        return user["docid"]
+    candidate = user.get("id") or user.get("login")
+    error, document = fetch_document(state.es, "nyx_user", candidate, state.elkversion)
+    if error == "" and document and document.get("_id"):
+        return document["_id"]
+    return candidate
+
+
 def finalize_login(usr, data, es, conn):
     token = uuid.uuid4()
 
@@ -110,6 +132,9 @@ def finalize_login(usr, data, es, conn):
 
     usr["_source"]["password"] = ""
     usr["_source"]["id"] = data["login"]
+    # Kept apart from `id`, which stays what the user typed: the preference and password
+    # routes address a document, and that document is not always indexed under the login.
+    usr["_source"]["docid"] = usr.get("_id") or usr["_source"]["id"]
 
     try:
         state.redisserver.set("nyx_tok_" + str(token), json.dumps(usr["_source"]), 3600 * 24)
@@ -319,6 +344,7 @@ def register(api, name_space):
 
                 usr["_source"]["password"] = ""
                 usr["_source"]["id"] = cleanlogin
+                usr["_source"]["docid"] = usr.get("_id") or cleanlogin
 
                 state.redisserver.set("nyx_tok_" + str(token), json.dumps(usr["_source"]), 3600 * 1)
 
@@ -613,10 +639,11 @@ def register(api, name_space):
                 return {"error": "nothing_to_save"}, 400
 
             try:
+                docid = user_document_id(user)
                 if state.elkversion >= 7:
-                    state.es.update(index="nyx_user", id=user["id"], body={"doc": updates})
+                    state.es.update(index="nyx_user", id=docid, body={"doc": updates})
                 else:
-                    state.es.update(index="nyx_user", doc_type="doc", id=user["id"],
+                    state.es.update(index="nyx_user", doc_type="doc", id=docid,
                                     body={"doc": updates})
             except Exception as e:
                 logger.error("Unable to save preferences for %s: %s", user.get("id"), e)
@@ -635,10 +662,11 @@ def register(api, name_space):
             req = json.loads(request.data.decode("utf-8"))
             logger.info("Change password request fields: " + ",".join(req.keys()))
             logger.info("Change password for user: " + str(user.get("id", "")))
+            docid = user_document_id(user)
             if state.elkversion >= 7:
-                usrdb = state.es.get(index="nyx_user", id=user["id"])
+                usrdb = state.es.get(index="nyx_user", id=docid)
             else:
-                usrdb = state.es.get(index="nyx_user", doc_type="doc", id=user["id"])
+                usrdb = state.es.get(index="nyx_user", doc_type="doc", id=docid)
             policy_error = check_new_password(req["new_password"], user.get("login", ""))
             if policy_error:
                 return {"error": policy_error}
@@ -646,10 +674,10 @@ def register(api, name_space):
                 usrdb["_source"]["password"] = pbkdf2_sha256.hash(req["new_password"])
                 usrdb["_source"]["mustResetPassword"] = False
                 if state.elkversion >= 7:
-                    res = state.es.index(index="nyx_user", body=usrdb["_source"], id=user["id"])
+                    res = state.es.index(index="nyx_user", body=usrdb["_source"], id=docid)
                 else:
                     res = state.es.index(index="nyx_user", body=usrdb["_source"],
-                                         doc_type="doc", id=user["id"])
+                                         doc_type="doc", id=docid)
                 logger.info(res)
                 # The current token stops being throttled: both copies are updated (worker
                 # memory and Redis), otherwise the user stays blocked until they log in

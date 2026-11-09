@@ -93,6 +93,11 @@ v3.22.25 08/Nov/2026 Security: the SQL of a pg_search is no longer built with th
                      the ${FILTER} term is bound, the sort column must be declared by the
                      application, and size/page are integers inside bounds. The worker image is
                      built from the API image of the same release, so the two cannot drift
+v3.22.27 09/Nov/2026 A UI preference lands on the caller's document, whatever login the form took:
+                     `id` holds the typed login (`amarchand`) while eight accounts are indexed
+                     under their address, so the write answered 404 document_missing_exception —
+                     `storage_failed` in the console. The payload now carries `docid`, and a token
+                     issued before it is resolved by login; the password change uses it too
 """
 
 import json
