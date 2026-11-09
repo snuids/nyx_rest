@@ -67,12 +67,7 @@ class DateTimeEncoder(json.JSONEncoder):
 
 @cached(cache=TTLCache(maxsize=1024, ttl=60))
 def getAPIKey(token):
-    if state.elkversion >= 7:
-        return state.es.get(index="nyx_apikey", id=token)
-    else:
-        return state.es.get(index="nyx_apikey", id=token, doc_type="_doc")
-
-
+    return state.es.get(index="nyx_apikey", id=token)
 def checkAPIKey(request):
     """True when the request carries a valid machine key (a `nyx_apikey` document).
 

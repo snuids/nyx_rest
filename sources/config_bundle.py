@@ -211,7 +211,7 @@ def summarise(changes):
     return summary
 
 
-def build_bulk_lines(changes, bundle, elkversion=7):
+def build_bulk_lines(changes, bundle):
     """
     Turn the writable part of a plan into an Elasticsearch bulk payload.
 
@@ -231,8 +231,6 @@ def build_bulk_lines(changes, bundle, elkversion=7):
         if action not in ("create", "update", "delete"):
             continue
         meta = {"_index": change["index"], "_id": change["id"]}
-        if elkversion < 7:
-            meta["_type"] = "doc"
 
         if action == "delete":
             lines.append(json.dumps({"delete": meta}))

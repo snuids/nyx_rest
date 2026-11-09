@@ -98,6 +98,12 @@ v3.22.27 09/Nov/2026 A UI preference lands on the caller's document, whatever lo
                      under their address, so the write answered 404 document_missing_exception —
                      `storage_failed` in the console. The payload now carries `docid`, and a token
                      issued before it is resolved by login; the password change uses it too
+v3.22.28 09/Nov/2026 Elasticsearch 6 is no longer supported: the 26 `if elkversion >= 7` guards,
+                     28 `doc_type=` arguments and the 14 try/except retries they needed are gone,
+                     along with the two `hits.total` shapes and the two `_type` fields. The
+                     installed client is opensearch-py 2.x, whose calls have no `doc_type`
+                     parameter at all — the ES6 branches could only raise. The API now refuses to
+                     start on a cluster below 7 instead of answering 400s on every read.
 """
 
 import json
@@ -278,6 +284,13 @@ thread = threading.Thread(target=handleAPICalls)
 thread.start()
 
 state.elkversion = getELKVersion(state.es)
+if state.elkversion < 7:
+    # Refuse to run rather than degrade: the routes no longer carry a `doc_type` fallback, so a
+    # 6.x cluster would answer 400s on every read and write instead of one clear message here.
+    logger.error("Elasticsearch %s is not supported: 7.0 or later is required.",
+                 state.elkversion)
+    raise SystemExit(1)
+logger.info("Elasticsearch %s", state.elkversion)
 refresh_translations()
 
 # ---------------------------------------------------------------------------

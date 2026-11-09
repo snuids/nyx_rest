@@ -193,8 +193,10 @@ mount the real Flask application over fake Elasticsearch and fake Redis (`tests/
 so they need flask, pandas and the rest of `requirements7.txt` — without them they skip silently,
 which is why the CI fails on any skip.
 
-Coverage is measured by `scripts/ci_test.sh` and gated at 53 % (54 % on 2026-11-08). Raise the
-floor as tests land, never lower it.
+Coverage is measured by `scripts/ci_test.sh` and gated at 59 % (measured 2026-11-09; it was
+58 % before Elasticsearch 6 support was dropped, which removed ~110 statements that were only
+ever reached on a cluster the client can no longer talk to). Raise the floor as tests land, never
+lower it.
 
 ## Language
 

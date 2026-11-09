@@ -74,7 +74,7 @@ class FakeES:
         self.get_error: "Optional[Exception]" = None
 
     # -- reading ---------------------------------------------------------
-    def get(self, index=None, id=None, doc_type=None, **kwargs):
+    def get(self, index=None, id=None, **kwargs):
         self.calls.append(("get", index, id))
         if self.get_error is not None:
             raise self.get_error
@@ -85,7 +85,7 @@ class FakeES:
         # fixtures (`finalize_login` sets the password field to empty on the document)
         return {"_id": id, "_index": index, "_source": copy.deepcopy(source)}
 
-    def search(self, index=None, body=None, doc_type=None, size=None, **kwargs):
+    def search(self, index=None, body=None, size=None, **kwargs):
         self.calls.append(("search", index, body))
         self.searches.append((index, body))
         hits = self.foreign_hits.get(index)
@@ -121,7 +121,7 @@ class FakeES:
         return {"responses": []}
 
     # -- writing ---------------------------------------------------------
-    def index(self, index=None, body=None, id=None, doc_type=None, **kwargs):
+    def index(self, index=None, body=None, id=None, **kwargs):
         if "document" in kwargs:
             # The real client is opensearchpy: it wants `body=`, and `document=` raises. Some
             # callers try elasticsearch-py's spelling first inside a `try/except TypeError`
@@ -140,7 +140,7 @@ class FakeES:
         self.docs.setdefault(index, {})[id] = copy.deepcopy(parsed)
         return {"result": "created", "_id": id}
 
-    def update(self, index=None, id=None, body=None, doc_type=None, **kwargs):
+    def update(self, index=None, id=None, body=None, **kwargs):
         """Partial update, like the real client: `{"doc": {...}}` merges into the document.
 
         The preferences route is the first caller; a fake that ignored the write would let it
@@ -161,7 +161,7 @@ class FakeES:
         self.docs[index][id] = merged
         return {"result": "updated", "_id": id}
 
-    def delete(self, index=None, id=None, doc_type=None, **kwargs):
+    def delete(self, index=None, id=None, **kwargs):
         self.deleted.append((index, id))
         (self.docs.get(index) or {}).pop(id, None)
         return {"result": "deleted"}

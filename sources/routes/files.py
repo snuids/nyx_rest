@@ -36,11 +36,7 @@ logger = logging.getLogger()
 
 def retrieve_app_info(rec_id, user):
     try:
-        if state.elkversion >= 7:
-            app = state.es.get(index="nyx_app", id=rec_id)
-        else:
-            app = state.es.get(index="nyx_app", doc_type="doc", id=rec_id)
-
+        app = state.es.get(index="nyx_app", id=rec_id)
         if app['_source']['type'] == 'file-system' and can_access_file_app(app['_source'], user):
             regex = ''
             if 'regex' in app['_source']['config']:
@@ -55,15 +51,11 @@ def retrieve_app_info(rec_id, user):
 
 
 @cached(cache=TTLCache(maxsize=1, ttl=300))
-def _discover_app_roots(es, elkversion):
+def _discover_app_roots(es):
     """Return file-system apps; privilege checks are done per request."""
     roots = []
     try:
-        if elkversion >= 7:
-            res = es.search(index="nyx_app", body={"size": 1000})
-        else:
-            res = es.search(index="nyx_app", body={"size": 1000}, doc_type="doc")
-
+        res = es.search(index="nyx_app", body={"size": 1000})
         for hit in res["hits"]["hits"]:
             source = hit.get("_source", {})
             if source.get("type") == "file-system":
@@ -88,7 +80,7 @@ def get_allowed_stream_roots(user):
         roots.append("/logs")
     if "admin" in user.get("privileges", []):
         roots += configured
-    roots += [root for root, app in _discover_app_roots(state.es, state.elkversion)
+    roots += [root for root, app in _discover_app_roots(state.es)
               if can_access_file_app(app, user)]
     return roots
 

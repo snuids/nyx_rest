@@ -162,7 +162,7 @@ class BulkTests(unittest.TestCase):
     def test_bulk_lines_carry_the_documents_to_write(self):
         bundle = make_bundle({"nyx_app": [APP]})
         plan = compute_plan(bundle, {})
-        body, operations = build_bulk_lines(plan["changes"], bundle, elkversion=7)
+        body, operations = build_bulk_lines(plan["changes"], bundle)
         self.assertEqual(operations, 1)
         lines = body.strip().split("\n")
         self.assertEqual(len(lines), 2)
@@ -170,12 +170,6 @@ class BulkTests(unittest.TestCase):
         self.assertIn('"_id": "deliveries"', lines[0])
         self.assertIn('"title": "Deliveries"', lines[1])
         self.assertNotIn("_type", lines[0])
-
-    def test_bulk_lines_keep_the_doc_type_on_old_clusters(self):
-        bundle = make_bundle({"nyx_app": [APP]})
-        plan = compute_plan(bundle, {})
-        body, _ = build_bulk_lines(plan["changes"], bundle, elkversion=6)
-        self.assertIn('"_type": "doc"', body.split("\n")[0])
 
     def test_nothing_to_write_produces_an_empty_payload(self):
         bundle = make_bundle({"nyx_app": [APP]})

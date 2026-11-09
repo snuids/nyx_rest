@@ -41,7 +41,7 @@ class FakeES:
         self.bulk_body = None
         self.indices = FakeIndices()
 
-    def search(self, index=None, body=None, doc_type=None):
+    def search(self, index=None, body=None):
         if index not in self.documents:
             raise Exception("index_not_found_exception")
         return {"hits": {"hits": self.documents[index]}}

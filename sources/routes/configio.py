@@ -32,10 +32,7 @@ def _search_all(index, size=10000):
     """All documents of an index, ignoring an index that does not exist yet."""
     body = {"size": size, "query": {"match_all": {}}}
     try:
-        if state.elkversion >= 7:
-            response = state.es.search(index=index, body=body)
-        else:
-            response = state.es.search(index=index, doc_type="doc", body=body)
+        response = state.es.search(index=index, body=body)
     except Exception:
         logger.info("configuration bundle: index %s not readable, treated as empty", index)
         return []
@@ -134,7 +131,7 @@ def register(app, api, name_space):
                     "changes": plan["changes"],
                 }
 
-            body, operations = build_bulk_lines(plan["changes"], bundle, state.elkversion)
+            body, operations = build_bulk_lines(plan["changes"], bundle)
             if operations == 0:
                 return {
                     "error": "",

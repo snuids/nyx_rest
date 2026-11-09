@@ -60,7 +60,6 @@ def get_sql_server_connection(app):
 def getAppByID(es,appid):
     logger=logging.getLogger()
     logger.info("Loading APP:>>"+appid)
-    #res=es.get("nyx_app",id=appid,doc_type="doc")
     res=es.get("nyx_app",id=appid)
 
     return res

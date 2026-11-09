@@ -7,6 +7,9 @@ mounting an application or installing pandas.
 It exists because a missing document is not an outage: creating a user starts with a GET on
 their future identifier, and answering "unable to get data" there pushed a normal operation
 into the API's error counter.
+
+Elasticsearch 6 support is gone: the client installed is opensearch-py 2.x, which no longer has a
+`doc_type` parameter, so the second call each of these had for ES 6 could only ever raise.
 """
 
 import logging
@@ -19,7 +22,7 @@ def is_not_found(exc):
     return (getattr(exc, "status_code", None) == 404
             or type(exc).__name__ == "NotFoundError")
 
-def find_user_by_login(es, login, elkversion):
+def find_user_by_login(es, login):
     """Finds a user by login when their _id does not hold it.
 
     Eight production accounts are indexed under their e-mail address while their `login`
@@ -30,17 +33,14 @@ def find_user_by_login(es, login, elkversion):
     """
     body = {"size": 1, "query": {"term": {"login.keyword": str(login).lower()}}}
     try:
-        if elkversion >= 7:
-            res = es.search(index="nyx_user", body=body)
-        else:
-            res = es.search(index="nyx_user", doc_type="doc", body=body)
+        res = es.search(index="nyx_user", body=body)
     except Exception:
         logger.warning("recherche par login impossible", exc_info=True)
         return None
     hits = res.get("hits", {}).get("hits", [])
     return hits[0] if hits else None
 
-def fetch_document(es, index, object_id, elkversion, doc_type="doc"):
+def fetch_document(es, index, object_id):
     """Reads a document by identifier. A missing document is not an API error.
 
     Creating a user starts with a GET on their future identifier: the document obviously
@@ -49,13 +49,11 @@ def fetch_document(es, index, object_id, elkversion, doc_type="doc"):
     counter — three per account creation.
     """
     try:
-        if elkversion >= 7:
-            return "", es.get(index=index, id=object_id)
-        return "", es.get(index=index, id=object_id, doc_type=doc_type)
+        return "", es.get(index=index, id=object_id)
     except Exception as exc:
         if not is_not_found(exc):
             logger.error("unable to get data", exc_info=True)
             return "unable to get data", None
     if index == "nyx_user":
-        return "", find_user_by_login(es, object_id, elkversion)
+        return "", find_user_by_login(es, object_id)
     return "", None

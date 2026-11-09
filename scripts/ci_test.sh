@@ -15,7 +15,7 @@
 # sign-in had its own tests. Raise it as tests land, never lower it.
 set -eu
 
-FLOOR=58
+FLOOR=59
 
 python -m pip install --quiet -r sources/requirements-test.txt
 python -m coverage erase
