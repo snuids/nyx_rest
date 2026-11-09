@@ -389,3 +389,58 @@ class PreferencesTests(RouteTestCase):
         code, body, _ = self.call("post", "/api/v1/cred/preferences", None, {"theme": "dark"})
         self.assertNotEqual(body.get("error"), "")
         self.assertEqual(self.es.written, [])
+
+    def test_a_short_login_account_saves_on_its_address(self):
+        """Le cas de la production : le document est indexé sous l'adresse, le login est court.
+
+        Le theme etait ecrit sur `id`, la saisie du formulaire de connexion (« amarchand »), qui
+        n'est pas l'identifiant du document : le cluster repondait 404
+        `document_missing_exception` et la console `storage_failed`.
+        """
+        self.es.docs["nyx_user"]["carol@example.com"] = {
+            "login": "carol", "privileges": ["YUL"], "language": "en", "filters": [],
+            "password": pbkdf2_sha256.hash(PASSWORD),
+        }
+        # Le faux cluster ne filtre pas les requetes : on lui dit quelle fiche la recherche
+        # par login doit rendre, sinon la connexion tombe sur le premier compte de l'index.
+        self.es.foreign_hits["nyx_user"] = [{
+            "_id": "carol@example.com", "_index": "nyx_user",
+            "_source": dict(self.es.docs["nyx_user"]["carol@example.com"]),
+        }]
+        code, body, _ = self.call("post", "/api/v1/cred/login",
+                                  body={"login": "carol", "password": PASSWORD})
+        self.assertEqual(body["error"], "")
+        self.assertEqual(body["cred"]["user"]["id"], "carol", "`id` reste la saisie")
+        self.assertEqual(body["cred"]["user"]["docid"], "carol@example.com")
+
+        code, body, _ = self.call("post", "/api/v1/cred/preferences",
+                                  body["cred"]["token"], {"theme": "dark"})
+        self.assertEqual(body["error"], "", body)
+        self.assertEqual(code, 200)
+        self.assertEqual(self.es.docs["nyx_user"]["carol@example.com"]["theme"], "dark")
+        self.assertNotIn("carol", self.es.docs["nyx_user"])
+
+    def test_a_token_issued_before_docid_still_saves(self):
+        """Une session ouverte avant le correctif ne doit pas exiger une reconnexion."""
+        self.es.docs["nyx_user"]["carol@example.com"] = {
+            "login": "carol", "privileges": ["YUL"], "language": "en", "filters": [],
+            "password": pbkdf2_sha256.hash(PASSWORD),
+        }
+        token = self.login_as("carol", ["YUL"])
+        code, body, _ = self.call("post", "/api/v1/cred/preferences", token, {"theme": "auto"})
+        self.assertEqual(body["error"], "", body)
+        self.assertEqual(self.es.docs["nyx_user"]["carol@example.com"]["theme"], "auto")
+
+    def test_a_password_change_lands_on_the_same_document(self):
+        """Meme identifiant, meme piege : le changement de mot de passe echouait aussi."""
+        self.es.docs["nyx_user"]["carol@example.com"] = {
+            "login": "carol", "privileges": ["YUL"], "language": "en", "filters": [],
+            "password": pbkdf2_sha256.hash(PASSWORD),
+        }
+        token = self.login_as("carol", ["YUL"])
+        code, body, _ = self.call("post", "/api/v1/cred/changepassword", token,
+                                  {"old_password": PASSWORD, "new_password": "Nouveau#Pass2026"})
+        self.assertEqual(body["error"], "", body)
+        stored = self.es.docs["nyx_user"]["carol@example.com"]
+        self.assertTrue(pbkdf2_sha256.verify("Nouveau#Pass2026", stored["password"]))
+        self.assertFalse(stored["mustResetPassword"])
