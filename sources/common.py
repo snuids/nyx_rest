@@ -16,20 +16,13 @@ from cachetools import cached, LRUCache, TTLCache
 def get_mappings(es,index):
     finalmaps={}
 
+    # One shape only since Elasticsearch 6 is no longer supported: the properties sit directly
+    # under `mappings`, not under a document type.
     maps=es.indices.get_mapping(index)
-    if "properties" in maps[list(maps)[0]]["mappings"]:
-        maps2=maps[list(maps)[0]]["mappings"]["properties"]
-        for field in maps2:
-            if "type" in maps2[field]:
-                finalmaps[field]=maps2[field]["type"]
-        
-    else:
-        doc_type=list(maps[list(maps)[0]]["mappings"])[0]
-        maps2=maps[list(maps)[0]]["mappings"][doc_type]["properties"]
-        maps2
-        for field in maps2:
-            if "type" in maps2[field]:
-                finalmaps[field]=maps2[field]["type"]
+    maps2=maps[list(maps)[0]]["mappings"]["properties"]
+    for field in maps2:
+        if "type" in maps2[field]:
+            finalmaps[field]=maps2[field]["type"]
 
     return finalmaps
 
@@ -130,7 +123,6 @@ def cleanElasticRecords(records):
 #################################################################################
 def loadData(es,conn,index,data,doc_type,download,cui,is_rest_api,user,outputformat,OUTPUT_URL,OUTPUT_FOLDER):
     logger=logging.getLogger()
-    elkversion=getELKVersion(es)
 
     logger.info("LOAD DATA index=%s doc_type=%s" %(index,doc_type))
 
@@ -176,18 +168,11 @@ def loadData(es,conn,index,data,doc_type,download,cui,is_rest_api,user,outputfor
 
 
     if fromval ==0:        
-        if elkversion>=7:
-            response = es.search(
-                index=index,
-                body=json.dumps(data),
-                scroll='1m',
-            )
-        else:
-            response = es.search(
-                index=index,
-                body=json.dumps(data),
-                scroll='1m',doc_type=doc_type,
-            )
+        response = es.search(
+            index=index,
+            body=json.dumps(data),
+            scroll='1m',
+        )
         hits=[]
         aggs=[]
         scroll_ids=[]
@@ -198,10 +183,7 @@ def loadData(es,conn,index,data,doc_type,download,cui,is_rest_api,user,outputfor
             scroll_ids.append(response['_scroll_id'])
 
         if "hits" in response and "total" in response["hits"]:
-            if isinstance(response["hits"]["total"],dict):
-                total=response["hits"]["total"]["value"]
-            else:
-                total=response["hits"]["total"]
+            total=response["hits"]["total"]["value"]
 
 
         while len(response['hits']['hits']):
@@ -217,17 +199,10 @@ def loadData(es,conn,index,data,doc_type,download,cui,is_rest_api,user,outputfor
             scroll_ids.append(response['_scroll_id'])
             response = es.scroll(scroll_id=response['_scroll_id'], scroll='1m')
     else:
-        if elkversion==7:
-            response = es.search(
-                index=index,
-                body=json.dumps(data)
-            )
-        else:
-            response = es.search(
-                index=index,
-                body=json.dumps(data),
-                doc_type=doc_type,
-            )
+        response = es.search(
+            index=index,
+            body=json.dumps(data)
+        )
         logger.info("HELLO")
         hits=response["hits"]["hits"]
         if "aggregations" in response:
@@ -235,10 +210,7 @@ def loadData(es,conn,index,data,doc_type,download,cui,is_rest_api,user,outputfor
         else:
             aggs=[]
         if "hits" in response and "total" in response["hits"]:
-            if isinstance(response["hits"]["total"],dict):
-                total=response["hits"]["total"]["value"]
-            else:
-                total=response["hits"]["total"]
+            total=response["hits"]["total"]["value"]
 
     if index.find("nyx_reporttask")==0:
         hits=filterReports(hits,user)    

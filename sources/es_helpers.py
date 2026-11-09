@@ -21,10 +21,7 @@ def refresh_indices():
     if state.last_indices_refresh + timedelta(seconds=state.indices_refresh_seconds) > datetime.now():
         return
     logger.info("Refresh Indices")
-    if state.elkversion >= 7:
-        state.indices = state.es.search(index="nyx_indice", body={})["hits"]["hits"]
-    else:
-        state.indices = state.es.search(index="nyx_indice", body={}, doc_type="doc")["hits"]["hits"]
+    state.indices = state.es.search(index="nyx_indice", body={})["hits"]["hits"]
     state.last_indices_refresh = datetime.now()
 
 
@@ -33,15 +30,9 @@ def refresh_translations():
             timedelta(seconds=state.last_translation_refresh_seconds) > datetime.now():
         return
     logger.info("Refreshing Translations")
-    if state.elkversion >= 7:
-        translationsrec = state.es.search(
-            index="nyx_translation", body={"size": 1000}
-        )["hits"]["hits"]
-    else:
-        translationsrec = state.es.search(
-            index="nyx_translation", body={"size": 1000}, doc_type="doc"
-        )["hits"]["hits"]
-
+    translationsrec = state.es.search(
+        index="nyx_translation", body={"size": 1000}
+    )["hits"]["hits"]
     for tran in translationsrec:
         source = tran["_source"]
         for key in source:
@@ -267,10 +258,7 @@ def handleAPICalls():
                     indexdatepattern = "nyx_apicalls-" + datetime.now().strftime("%Y.%m.%d").lower()
                     for api_entry in apis:
                         action = {}
-                        if state.elkversion >= 7:
-                            action["index"] = {"_index": indexdatepattern}
-                        else:
-                            action["index"] = {"_index": indexdatepattern, "_type": "doc"}
+                        action["index"] = {"_index": indexdatepattern}
                         messagebody += json.dumps(action) + "\r\n"
                         messagebody += json.dumps(api_entry) + "\r\n"
                     state.es.bulk(messagebody)

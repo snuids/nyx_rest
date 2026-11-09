@@ -82,11 +82,7 @@ def register(app, api, name_space):
             data = json.loads(request.data.decode("utf-8"))
 
             app = None
-            if state.elkversion >= 7:
-                app = state.es.get(index="nyx_app", id=rec_id)
-            else:
-                app = state.es.get(index="nyx_app", doc_type="doc", id=rec_id)
-
+            app = state.es.get(index="nyx_app", id=rec_id)
             if app is None:
                 return {"error": "UNKNOWN APP"}
 
@@ -261,11 +257,7 @@ def register(app, api, name_space):
                 " end:" + str(end) + " flat:" + str(flat)
             )
 
-            if state.elkversion >= 7:
-                ds = state.es.get(index="nyx_datasource", id=dsid)
-            else:
-                ds = state.es.get(index="nyx_datasource", doc_type="doc", id=dsid)
-
+            ds = state.es.get(index="nyx_datasource", id=dsid)
             logger.info("QUERY TYPE# " * 20)
             query = ds["_source"]["query"]
             querytype = ds["_source"].get("type", "elasticsearch")
@@ -535,8 +527,7 @@ def register(app, api, name_space):
             if is_nyx_user_indice(index) and not can_read_nyx_user(user, object):
                 logger.info("nyx_user: reading another account refused")
                 return {'error': "Not Allowed", "data": None}
-            error, ret = fetch_document(state.es, index, object, state.elkversion,
-                                        request.args.get("doc_type", "doc"))
+            error, ret = fetch_document(state.es, index, object)
             return {'error': error, "data": ret}
 
         elif met == 'post':
@@ -563,7 +554,7 @@ def register(app, api, name_space):
                         # than the one their owner signs in with (`amarchand@icloud.com` for
                         # the login `amarchand`), so look for the same person under
                         # `login.keyword` before treating this as a creation.
-                        hit = find_user_by_login(state.es, object, state.elkversion)
+                        hit = find_user_by_login(state.es, object)
                         existing = hit["_source"] if hit else None
 
                     if provided and "$pbkdf2-sha256" not in provided:
@@ -583,22 +574,14 @@ def register(app, api, name_space):
                         dataobj["password"] = pbkdf2_sha256.hash(generate_temporary_password())
                         dataobj["mustResetPassword"] = True
                     data = json.dumps(dataobj)
-                if state.elkversion >= 7:
-                    state.es.index(index=index, body=data, id=object)
-                else:
-                    state.es.index(index=index, body=data,
-                                   doc_type=request.args.get("doc_type", "doc"), id=object)
+                state.es.index(index=index, body=data, id=object)
             except:
                 logger.error("unable to post data", exc_info=True)
                 return {'error': "unable to post data"}
 
         elif met == 'delete':
             try:
-                if state.elkversion >= 7:
-                    ret = state.es.delete(index=index, id=object)
-                else:
-                    ret = state.es.delete(index=index, id=object,
-                                          doc_type=request.args.get("doc_type", "doc"))
+                ret = state.es.delete(index=index, id=object)
                 logger.info(ret)
             except:
                 return {'error': "unable to delete data"}

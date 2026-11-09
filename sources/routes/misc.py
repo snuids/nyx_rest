@@ -39,10 +39,7 @@ def register(app, api, name_space):
     @app.route('/api/v1/ui_css')
     def cssRest():
         logger.info("CSS called")
-        if state.elkversion >= 7:
-            res = state.es.get(index="nyx_config", id="nyx_css")
-        else:
-            res = state.es.get(index="nyx_config", id="nyx_css", doc_type="doc")
+        res = state.es.get(index="nyx_config", id="nyx_css")
         return Response(res["_source"]["file"], mimetype='text/css')
 
     # -----------------------------------------------------------------------

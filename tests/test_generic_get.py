@@ -28,7 +28,7 @@ class FakeES:
         self.search_hits = search_hits or []
         self.calls = []
 
-    def get(self, index, id=None, doc_type=None):
+    def get(self, index, id=None):
         self.calls.append(("get", index, id))
         if id in self.failures:
             raise self.failures[id]
@@ -36,7 +36,7 @@ class FakeES:
             return {"_id": id, "_index": index, "_source": self.documents[id]}
         raise NotFoundError(f"{index}/{id} not found")
 
-    def search(self, index, body=None, doc_type=None):
+    def search(self, index, body=None):
         self.calls.append(("search", index, body))
         return {"hits": {"hits": self.search_hits}}
 
@@ -48,20 +48,20 @@ class FetchDocumentTest(unittest.TestCase):
 
     def test_a_present_document_is_returned(self):
         es = FakeES({"bob@example.com": {"login": "bob@example.com"}})
-        error, doc = self.data.fetch_document(es, "nyx_user", "bob@example.com", 8)
+        error, doc = self.data.fetch_document(es, "nyx_user", "bob@example.com")
         self.assertEqual(error, "")
         self.assertEqual(doc["_id"], "bob@example.com")
 
     def test_a_missing_document_is_not_an_error(self):
         """The heart of the defect: three "errors" per account creation, all of them 404s."""
         es = FakeES()
-        error, doc = self.data.fetch_document(es, "nyx_user", "nouveau@example.com", 8)
+        error, doc = self.data.fetch_document(es, "nyx_user", "nouveau@example.com")
         self.assertEqual(error, "", "un document absent ne doit pas remplir le compteur d'erreurs")
         self.assertIsNone(doc)
 
     def test_a_real_failure_stays_an_error(self):
         es = FakeES(failures={"bob@example.com": ClusterDown("cluster unavailable")})
-        error, doc = self.data.fetch_document(es, "nyx_user", "bob@example.com", 8)
+        error, doc = self.data.fetch_document(es, "nyx_user", "bob@example.com")
         self.assertEqual(error, "unable to get data")
         self.assertIsNone(doc)
 
@@ -70,23 +70,16 @@ class FetchDocumentTest(unittest.TestCase):
         duplicate is possible."""
         es = FakeES(search_hits=[{"_id": "amarchand", "_index": "nyx_user",
                                   "_source": {"login": "amarchand"}}])
-        error, doc = self.data.fetch_document(es, "nyx_user", "amarchand", 8)
+        error, doc = self.data.fetch_document(es, "nyx_user", "amarchand")
         self.assertEqual(error, "")
         self.assertEqual(doc["_id"], "amarchand")
         self.assertEqual(es.calls[-1][0], "search")
 
     def test_the_login_lookup_is_not_attempted_on_other_indices(self):
         es = FakeES()
-        error, doc = self.data.fetch_document(es, "nyx_indice", "inconnu", 8)
+        error, doc = self.data.fetch_document(es, "nyx_indice", "inconnu")
         self.assertEqual((error, doc), ("", None))
         self.assertEqual([c[0] for c in es.calls], ["get"], "no search should be attempted")
-
-    def test_a_legacy_cluster_keeps_its_doc_type(self):
-        es = FakeES({"bob": {"login": "bob"}})
-        error, doc = self.data.fetch_document(es, "nyx_user", "bob", 6, doc_type="doc")
-        self.assertEqual(error, "")
-        self.assertEqual(doc["_id"], "bob")
-
 
 if __name__ == "__main__":
     unittest.main()

@@ -72,7 +72,7 @@ def github_configured():
                 and settings.GITHUB_REDIRECT_URI)
 
 
-def find_account(es, login, email, elkversion):
+def find_account(es, login, email):
     """The `nyx_user` document behind a GitHub identity, or `None`.
 
     The same pair of lookups as the password route: by document id first, then by
@@ -81,12 +81,10 @@ def find_account(es, login, email, elkversion):
     """
     for candidate in github_oauth.candidates(login, email):
         try:
-            if elkversion >= 7:
-                return es.get(index="nyx_user", id=candidate)
-            return es.get(index="nyx_user", doc_type="doc", id=candidate)
+            return es.get(index="nyx_user", id=candidate)
         except Exception:
             pass
-        hit = find_user_by_login(es, candidate, elkversion)
+        hit = find_user_by_login(es, candidate)
         if hit is not None:
             return hit
     return None
@@ -118,7 +116,7 @@ def user_document_id(user):
     if user.get("docid"):
         return user["docid"]
     candidate = user.get("id") or user.get("login")
-    error, document = fetch_document(state.es, "nyx_user", candidate, state.elkversion)
+    error, document = fetch_document(state.es, "nyx_user", candidate)
     if error == "" and document and document.get("_id"):
         return document["_id"]
     return candidate
@@ -267,7 +265,7 @@ def register(api, name_space):
 
             # The token has done its work; it is not stored anywhere and never becomes the session
             # token: the platform mints its own (finalize_login).
-            usr = find_account(state.es, login, email, state.elkversion)
+            usr = find_account(state.es, login, email)
             if usr is None:
                 # Only an existing account signs in: GitHub says who you are, `nyx_user` says what
                 # you may open, and an unknown account has no privileges to grant.
@@ -303,10 +301,7 @@ def register(api, name_space):
                 cleanlogin = credentials.id_token['email']
 
                 try:
-                    if state.elkversion >= 7:
-                        usr = state.es.get(index="nyx_user", id=cleanlogin)
-                    else:
-                        usr = state.es.get(index="nyx_user", doc_type="doc", id=cleanlogin)
+                    usr = state.es.get(index="nyx_user", id=cleanlogin)
                 except:
                     logger.info("Not found")
                     usr = None
@@ -323,10 +318,7 @@ def register(api, name_space):
                             }
                         },
                     }
-                    if state.elkversion >= 7:
-                        users = state.es.search(index="nyx_user", body=body)
-                    else:
-                        users = state.es.search(index="nyx_user", doc_type="doc", body=body)
+                    users = state.es.search(index="nyx_user", body=body)
                     if "hits" in users and "hits" in users["hits"] and \
                             len(users["hits"]["hits"]) > 0:
                         usr = users["hits"]["hits"][0]
@@ -417,10 +409,7 @@ def register(api, name_space):
                     return resp
 
                 try:
-                    if state.elkversion >= 7:
-                        usr = state.es.get(index="nyx_user", id=cleanlogin)
-                    else:
-                        usr = state.es.get(index="nyx_user", doc_type="doc", id=cleanlogin)
+                    usr = state.es.get(index="nyx_user", id=cleanlogin)
                 except:
                     logger.info("Not found", exc_info=True)
                     usr = None
@@ -437,10 +426,7 @@ def register(api, name_space):
                             }
                         },
                     }
-                    if state.elkversion >= 7:
-                        users = state.es.search(index="nyx_user", body=body)
-                    else:
-                        users = state.es.search(index="nyx_user", doc_type="doc", body=body)
+                    users = state.es.search(index="nyx_user", body=body)
                     if "hits" in users and "hits" in users["hits"] and \
                             len(users["hits"]["hits"]) > 0:
                         usr = users["hits"]["hits"][0]
@@ -482,10 +468,7 @@ def register(api, name_space):
                     if ">" in data["login"] and "admin" in usr["_source"]["privileges"]:
                         otheruser = data["login"].split(">")[1]
                         try:
-                            if state.elkversion >= 7:
-                                usr = state.es.get(index="nyx_user", id=otheruser)
-                            else:
-                                usr = state.es.get(index="nyx_user", doc_type="doc", id=otheruser)
+                            usr = state.es.get(index="nyx_user", id=otheruser)
                         except:
                             usr = None
                             return jsonify({'error': "Unknown User"})
@@ -564,10 +547,7 @@ def register(api, name_space):
             logger.info(">>> Reset password")
             req = json.loads(request.data.decode("utf-8"))
             try:
-                if state.elkversion >= 7:
-                    usrdb = state.es.get(index="nyx_user", id=req["login"])
-                else:
-                    usrdb = state.es.get(index="nyx_user", doc_type="doc", id=req["login"])
+                usrdb = state.es.get(index="nyx_user", id=req["login"])
             except:
                 return {"error": "usernotfound"}
 
@@ -575,12 +555,7 @@ def register(api, name_space):
             # A password set by an administrator is provisional: its holder must choose
             # one at their first login.
             usrdb["_source"]["mustResetPassword"] = True
-            if state.elkversion >= 7:
-                state.es.index(index="nyx_user", body=usrdb["_source"], id=req["login"])
-            else:
-                state.es.index(index="nyx_user", body=usrdb["_source"],
-                               doc_type="doc", id=req["login"])
-
+            state.es.index(index="nyx_user", body=usrdb["_source"], id=req["login"])
             usrdb["_source"]["id"] = usrdb["_id"]
 
             if "queue" in req:
@@ -640,11 +615,7 @@ def register(api, name_space):
 
             try:
                 docid = user_document_id(user)
-                if state.elkversion >= 7:
-                    state.es.update(index="nyx_user", id=docid, body={"doc": updates})
-                else:
-                    state.es.update(index="nyx_user", doc_type="doc", id=docid,
-                                    body={"doc": updates})
+                state.es.update(index="nyx_user", id=docid, body={"doc": updates})
             except Exception as e:
                 logger.error("Unable to save preferences for %s: %s", user.get("id"), e)
                 return {"error": "storage_failed"}, 500
@@ -663,21 +634,14 @@ def register(api, name_space):
             logger.info("Change password request fields: " + ",".join(req.keys()))
             logger.info("Change password for user: " + str(user.get("id", "")))
             docid = user_document_id(user)
-            if state.elkversion >= 7:
-                usrdb = state.es.get(index="nyx_user", id=docid)
-            else:
-                usrdb = state.es.get(index="nyx_user", doc_type="doc", id=docid)
+            usrdb = state.es.get(index="nyx_user", id=docid)
             policy_error = check_new_password(req["new_password"], user.get("login", ""))
             if policy_error:
                 return {"error": policy_error}
             if pbkdf2_sha256.verify(req["old_password"], usrdb["_source"]["password"]):
                 usrdb["_source"]["password"] = pbkdf2_sha256.hash(req["new_password"])
                 usrdb["_source"]["mustResetPassword"] = False
-                if state.elkversion >= 7:
-                    res = state.es.index(index="nyx_user", body=usrdb["_source"], id=docid)
-                else:
-                    res = state.es.index(index="nyx_user", body=usrdb["_source"],
-                                         doc_type="doc", id=docid)
+                res = state.es.index(index="nyx_user", body=usrdb["_source"], id=docid)
                 logger.info(res)
                 # The current token stops being throttled: both copies are updated (worker
                 # memory and Redis), otherwise the user stays blocked until they log in

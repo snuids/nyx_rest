@@ -159,12 +159,7 @@ def computeMenus(usr, token, apptag):
     from es_helpers import refresh_translations, get_translated_item
 
     refresh_translations()
-    if state.elkversion >= 7:
-        res3 = state.es.search(size=1000, index="nyx_app", body={"sort": [{"order": "asc"}]})
-    else:
-        res3 = state.es.search(size=1000, index="nyx_app", doc_type="doc",
-                               body={"sort": [{"order": "asc"}]})
-
+    res3 = state.es.search(size=1000, index="nyx_app", body={"sort": [{"order": "asc"}]})
     dict_dashboard = get_dict_dashboards(state.es)
 
     categories = {}

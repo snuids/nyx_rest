@@ -10,7 +10,7 @@ import threading
 from datetime import datetime, timedelta
 
 # Application metadata
-VERSION = "3.22.27"
+VERSION = "3.22.28"
 MODULE = "nyx_rest_" + str(os.getpid())
 
 # Config-derived constants (set during startup in nyx_rest_api_plus.py)
@@ -23,8 +23,10 @@ PRIVACY_CONTACT = ""
 OUTPUT_FOLDER = ""
 OUTPUT_URL = ""
 
-# ES version (updated at runtime)
-elkversion = 6
+# Elasticsearch major version, read at startup and refreshed by the API-call thread. It is
+# reported (`/health`, `/metrics`, `/config`) but no longer branched on: 6 is unsupported since
+# the client installed is opensearch-py 2.x, which has no `doc_type` parameter.
+elkversion = 7
 
 # Service connections (set during startup)
 es = None
