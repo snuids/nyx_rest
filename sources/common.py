@@ -59,7 +59,6 @@ def filterReportDefs(res,user):
     for rep in res:
         
         rep2=rep["_source"].get("privileges",[])
-        print(rep2)
         for rep_privilege in rep2:
             if rep_privilege in user["privileges"]:
                 newlist.append(rep)
