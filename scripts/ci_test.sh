@@ -13,11 +13,13 @@
 # `tests/test_kibana_export.py` held the dashboard export, then 56 % the same day once
 # `tests/test_pg_search.py` held the SQL the `pg_search` engine runs, then 58 % once the GitHub
 # sign-in had its own tests, then 64 % once `tests/test_shared_helpers.py` held the helpers every
-# route calls through: `common.py` 34 -> 87 %, `auth_ad.py` 33 -> 100 %, `loadData` in full.
-# Raise it as tests land, never lower it.
+# route calls through: `common.py` 34 -> 87 %, `auth_ad.py` 33 -> 100 %, `loadData` in full, then
+# 70 % once `tests/test_kibana_helpers.py` held the Kibana embed URL and the menu builder
+# (`kibana_helpers.py` 15 -> 96 %) and `tests/test_pg_data.py` held the SQL applications' read path
+# (`pg_common.py` 45 -> 79 %). Raise it as tests land, never lower it.
 set -eu
 
-FLOOR=64
+FLOOR=70
 
 python -m pip install --quiet -r sources/requirements-test.txt
 python -m coverage erase

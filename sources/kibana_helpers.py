@@ -42,7 +42,6 @@ def clean_kibana_url(url, column, filter):
                 minquery += " AND " + replacement
 
             minquery = "query:'" + minquery + "'"
-            print(minquery)
             url = url.replace(match.group(groupNum), minquery)
     return url
 

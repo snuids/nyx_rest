@@ -193,16 +193,26 @@ mount the real Flask application over fake Elasticsearch and fake Redis (`tests/
 so they need flask, pandas and the rest of `requirements7.txt` — without them they skip silently,
 which is why the CI fails on any skip.
 
-Coverage is measured by `scripts/ci_test.sh` and gated at **64 %** (measured 2026-11-09: 64,5 %,
-2 385 of 3 697 statements — it was 59 % before the shared helpers got a suite). Raise the floor as
-tests land, never lower it.
+Coverage is measured by `scripts/ci_test.sh` and gated at **70 %** (measured 2026-11-09: 70,8 %,
+2 616 of 3 693 statements — it was 59 % before the helpers got a suite). Raise the floor as tests
+land, never lower it.
 
-`tests/test_shared_helpers.py` holds the logic the routes call through: the privileges filter, the
-flattening of a hit into a row, the export writer, `loadData` (scroll, paging, date_histogram
-rewrite, `.keyword` sorting, delegation above 5 000 rows), the SQL Server connection pool and the
-Active Directory bind. On that pass `common.py` went from 34 % to 87 % and `auth_ad.py` to 100 %;
-`pg_common.py` is at 45 % — `loadPGData` is the largest remaining hole, with `kibana_helpers.py`
-at 15 %.
+Three files hold the logic the routes call through:
+
+- `tests/test_shared_helpers.py` — the privileges filter, the flattening of a hit into a row, the
+  export writer, `loadData` (scroll, paging, `date_histogram` rewrite, `.keyword` sorting,
+  delegation above 5 000 rows), the SQL Server connection pool and the Active Directory bind
+  (`common.py` 34 → 87 %, `auth_ad.py` 33 → 100 %);
+- `tests/test_kibana_helpers.py` — the embed URL a dashboard becomes (time range, refresh,
+  references of a 7.x document, colour escaping, space prefix) and the menu builder that drops what
+  the account may not see (`kibana_helpers.py` 15 → 96 %);
+- `tests/test_pg_data.py` — the SQL applications' read path: count, page, sort on a declared column
+  only, time range, bound search term, histogram bucketing, export and delegation
+  (`pg_common.py` 45 → 79 %).
+
+What is left, by size: `nyx_rest_helper.py` (267 statements, 0 % — a separate service), the
+`__main__` of `nyx_rest_api_plus.py`, `routes/data.py` at 63 %, `routes/misc.py` at 66 %,
+`extensions/woop.py` at 27 % and `es_helpers.py` at 63 %.
 
 ## Language
 
