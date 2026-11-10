@@ -26,8 +26,12 @@ jobs:
     steps:
       # The tag is the version of the release, taken from the commit message. Squash, rebase and
       # merge commits all carry it (GitHub repeats the pull request title in the body of a merge
-      # commit), but a pull request whose title has no version used to skip the build silently:
-      # no red run, no image. It now falls back on the pull request title and fails loudly.
+      # commit), and the pull request title is the fallback.
+      #
+      # A commit with no version does not publish an image — a test or documentation change does
+      # not change what runs — but it is not a failure either: the run used to go red on master
+      # for those, which is noise that hides a real break. The build job is skipped instead, and
+      # the notice says so.
       - name: Resolve the version
         id: extract_version
         env:
@@ -51,8 +55,8 @@ jobs:
           VERSION=${VERSION#v}
 
           if [ -z "$VERSION" ]; then
-            echo "::error::No version (vX.Y.Z) in the commit message nor in the pull request title; refusing to publish an untagged image."
-            exit 1
+            echo "::notice::No version (vX.Y.Z) in the commit message nor in the pull request title: this commit publishes no image."
+            exit 0
           fi
 
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
@@ -60,6 +64,8 @@ jobs:
 
   build:
     needs: prepare
+    # No version resolved: nothing to publish, and nothing red.
+    if: needs.prepare.outputs.version != ''
     runs-on: ubuntu-latest
 
     steps:
