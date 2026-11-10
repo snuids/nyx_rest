@@ -193,8 +193,8 @@ mount the real Flask application over fake Elasticsearch and fake Redis (`tests/
 so they need flask, pandas and the rest of `requirements7.txt` — without them they skip silently,
 which is why the CI fails on any skip.
 
-Coverage is measured by `scripts/ci_test.sh` and gated at **70 %** (measured 2026-11-09: 70,8 %,
-2 616 of 3 693 statements — it was 59 % before the helpers got a suite). Raise the floor as tests
+Coverage is measured by `scripts/ci_test.sh` and gated at **77 %** (measured 2026-11-09: 78,1 %,
+2 883 of 3 693 statements — it was 59 % before the helpers got a suite). Raise the floor as tests
 land, never lower it.
 
 Three files hold the logic the routes call through:
@@ -208,11 +208,14 @@ Three files hold the logic the routes call through:
   the account may not see (`kibana_helpers.py` 15 → 96 %);
 - `tests/test_pg_data.py` — the SQL applications' read path: count, page, sort on a declared column
   only, time range, bound search term, histogram bucketing, export and delegation
-  (`pg_common.py` 45 → 79 %).
+  (`pg_common.py` 45 → 79 %);
+- `tests/test_rest_helper.py` — the export worker that consumes the two delegation queues:
+  `account_behind` (the account read from the cluster, not from the message), the export rights
+  re-applied per index, the mail with its zipped attachment, the PostgreSQL pool and its ping
+  thread, and the container's startup (`nyx_rest_helper.py` 0 → 100 %).
 
-What is left, by size: `nyx_rest_helper.py` (267 statements, 0 % — a separate service), the
-`__main__` of `nyx_rest_api_plus.py`, `routes/data.py` at 63 %, `routes/misc.py` at 66 %,
-`extensions/woop.py` at 27 % and `es_helpers.py` at 63 %.
+What is left, by size: the `__main__` of `nyx_rest_api_plus.py`, `routes/data.py` at 63 %,
+`routes/misc.py` at 66 %, `extensions/woop.py` at 27 % and `es_helpers.py` at 63 %.
 
 ## Language
 

@@ -16,10 +16,13 @@
 # route calls through: `common.py` 34 -> 87 %, `auth_ad.py` 33 -> 100 %, `loadData` in full, then
 # 70 % once `tests/test_kibana_helpers.py` held the Kibana embed URL and the menu builder
 # (`kibana_helpers.py` 15 -> 96 %) and `tests/test_pg_data.py` held the SQL applications' read path
-# (`pg_common.py` 45 -> 79 %). Raise it as tests land, never lower it.
+# (`pg_common.py` 45 -> 79 %), then 77 % once `tests/test_rest_helper.py` held the export worker
+# end to end (`nyx_rest_helper.py` 0 -> 100 %: the export rights re-applied on the worker, the
+# recipient read from the cluster, the mail, the PostgreSQL pool). Raise it as tests land, never
+# lower it.
 set -eu
 
-FLOOR=70
+FLOOR=77
 
 python -m pip install --quiet -r sources/requirements-test.txt
 python -m coverage erase

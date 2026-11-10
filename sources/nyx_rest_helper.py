@@ -111,7 +111,10 @@ def get_postgres_connection():
 
         return pg_connection
     except (Exception, psycopg2.Error) as error :
-        logger.error("Error while connecting to PostgreSQL", error)
+        # `logger.error("...", error)` passes `error` as a formatting argument with no `%s` in the
+        # message: logging raises TypeError there, so a database that refuses the connection ended
+        # up escaping this function instead of returning None. `exc_info` keeps the trace.
+        logger.error("Error while connecting to PostgreSQL: %s", error, exc_info=True)
     return None
 
 ################################################################################
