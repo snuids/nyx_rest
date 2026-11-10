@@ -1,6 +1,9 @@
 name: Build Docker Container
 
 on:
+  # `workflow_dispatch` exists to prove the version guard after a change to it: a manual run has no
+  # commit message, so it takes the "no version" path and must stay green with the build skipped.
+  workflow_dispatch:
   push:
     branches:
       - master
