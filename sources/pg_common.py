@@ -349,8 +349,6 @@ def loadPGData(es,appid,pgconn,conn,data,download,is_rest_api,user,outputformat,
 
     df=pd.DataFrame(hits)
 
-    for x in [desc for desc in cursor.description]:
-        print(x)
 
 ### GET MAPPING
     datescol={}
@@ -363,7 +361,6 @@ def loadPGData(es,appid,pgconn,conn,data,download,is_rest_api,user,outputformat,
             typ=m[1]
             if m[1] in [1082,1184,1114]:
                 datescol[col]=True
-        print(datescol)
 
     except Exception as e:
         logger.error("Unable to read mapping.",exc_info=True)
