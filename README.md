@@ -193,9 +193,10 @@ mount the real Flask application over fake Elasticsearch and fake Redis (`tests/
 so they need flask, pandas and the rest of `requirements7.txt` — without them they skip silently,
 which is why the CI fails on any skip.
 
-Coverage is measured by `scripts/ci_test.sh` and gated at **77 %** (measured 2026-11-09: 78,1 %,
-2 883 of 3 693 statements — it was 59 % before the helpers got a suite). Raise the floor as tests
-land, never lower it.
+Coverage is measured by `scripts/ci_test.sh` and gated at **79 %** (measured 2026-11-11: **80 %**,
+2 847 of 3 562 statements and 513 tests — it was 59 % before the helpers got a suite). The last two
+points came from deleting the parked `extensions/woop.py`, not from new tests: 131 statements went
+away, 95 of them uncovered. Raise the floor as tests land, never lower it.
 
 Three files hold the logic the routes call through:
 
