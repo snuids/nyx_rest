@@ -112,6 +112,12 @@ v3.22.30 11/Nov/2026 The WOOP/Onfleet extension is removed. It had not been load
                      extension loader became an explicit setting (`EXT_MODULES`, empty on this
                      instance), and the client integration it existed for is gone. The loader and
                      `sources/extensions/` stay for the next extension.
+
+v3.22.31 11/Nov/2026 The console submits a report through the API instead of forging the job
+  `/report/generate` and `/report/regenerate` build the job from the stored definition, the
+  authenticated session and an identifier of their own; the caller sends an id and parameter values.
+  `/sendmessage` stays closed to non-administrators, and a `reporteditor` account can finally generate
+  a report instead of receiving `403 destination not allowed` with nothing on screen.
 """
 
 import json
@@ -232,6 +238,7 @@ from routes.files import register as register_files
 from routes.data import register as register_data
 from routes.configio import register as register_configio
 from routes.health import register as register_health
+from routes.reports import register as register_reports
 
 register_misc(app, api, name_space)
 register_auth(api, name_space)
@@ -239,6 +246,7 @@ register_files(app, api, name_space)
 register_data(app, api, name_space)
 register_configio(app, api, name_space)
 register_health(app, api, name_space)
+register_reports(api, name_space)
 
 # ---------------------------------------------------------------------------
 # AMQC message handler

@@ -85,13 +85,21 @@ class FakeES:
         # fixtures (`finalize_login` sets the password field to empty on the document)
         return {"_id": id, "_index": index, "_source": copy.deepcopy(source)}
 
+    def _matching_indices(self, index):
+        """`nyx_reporttask-*` matches every monthly index, as the real client does."""
+        if index and index.endswith("-*"):
+            prefix = index[:-1]
+            return [name for name in self.docs if name.startswith(prefix)]
+        return [index]
+
     def search(self, index=None, body=None, size=None, **kwargs):
         self.calls.append(("search", index, body))
         self.searches.append((index, body))
         hits = self.foreign_hits.get(index)
         if hits is None:
-            hits = [{"_id": key, "_index": index, "_source": copy.deepcopy(value)}
-                    for key, value in (self.docs.get(index) or {}).items()]
+            hits = [{"_id": key, "_index": name, "_source": copy.deepcopy(value)}
+                    for name in self._matching_indices(index)
+                    for key, value in (self.docs.get(name) or {}).items()]
         else:
             hits = copy.deepcopy(hits)
         # One result decides a write: the login lookup that tells an update from a creation
@@ -100,6 +108,13 @@ class FakeES:
         # honoured. Everything else still returns the index untouched, on purpose: the
         # rights tests assert on the body sent, and a fake that filtered for them would
         # give false assurance.
+        # An `ids` query asks for specific documents (`/report/regenerate` replays one task): a fake
+        # that returned the whole index would hand the route a stranger's document.
+        ids_query = ((body or {}).get("query", {}) or {}).get("ids") or {}
+        if ids_query.get("values"):
+            wanted_ids = {str(value) for value in ids_query["values"]}
+            hits = [h for h in hits if str(h.get("_id")) in wanted_ids]
+
         wanted = ((body or {}).get("query", {}) or {}).get("term", {}) or {}
         for field, value in wanted.items():
             if field.split(".")[0] == "login":
