@@ -154,40 +154,6 @@ class ApiKeyTests(RouteTestCase):
                          "an authorisation check cannot answer yes when the store does not")
 
 
-@unittest.skipUnless(HAVE_ROUTE_DEPS, "route dependencies missing (" + DEPS_MISSING + ")")
-class ParkedExtensionTests(RouteTestCase):
-    """The WOOP module is parked: it must import, and it must not answer without a token."""
-
-    route_modules = ()
-
-    def mount_woop(self):
-        from flask import Flask
-        from flask_restx import Api
-        from middleware import token_required
-        from extensions import woop
-
-        app = Flask(__name__)
-        api = Api(app, doc="/api/doc/")
-        woop.config(api, None, None, None, token_required)
-        self.client = app.test_client()
-
-    def test_the_module_still_imports_and_registers(self):
-        self.mount_woop()          # a NameError or a missing import would raise here
-
-    def test_reading_deliveries_needs_a_token(self):
-        self.mount_woop()
-        response = self.client.get("/api/v1/woop/deliveries/")
-        self.assertEqual(response.status_code, 401)
-        self.assertEqual(response.get_json()["error"], "NO_TOKEN")
-
-    def test_creating_a_delivery_needs_a_token(self):
-        self.mount_woop()
-        response = self.client.post("/api/v1/woop/deliveries/", json={})
-        self.assertEqual(response.status_code, 401,
-                         "this route created Onfleet tasks for anyone who knew the URL")
-        self.assertEqual(self.broker.messages, [])
-
-
 class UnusedRedis:
     def get(self, key):
         return None

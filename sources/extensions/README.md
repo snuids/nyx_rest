@@ -4,8 +4,8 @@ A module in this directory is loaded **only** when its name appears in the `EXT_
 the API, comma separated:
 
 ```shell
-EXT_MODULES=woop            # one module
-EXT_MODULES=woop,onfleet    # several
+EXT_MODULES=acme            # one module
+EXT_MODULES=acme,onfleet    # several
                             # empty (the default): nothing is loaded
 ```
 
@@ -22,7 +22,7 @@ Until 3.22.23 the loader scanned `lib/` for any file whose name contained `ext` 
 `config()` at startup. Whatever was dropped there was mounted, with no authentication of its own:
 `lib/ext_woop.py` had been answering `POST /api/v1/woop/deliveries/` (create an Onfleet task) and
 `DELETE /api/v1/woop/deliveries/<task_id>` (delete it) unauthenticated on the production instance
-since 2023. An extension is a decision, so it is now a setting.
+from 2023 until 3.22.23. An extension is a decision, so it is now a setting.
 
 ## Adding one
 
@@ -34,9 +34,9 @@ since 2023. An extension is a decision, so it is now a setting.
 
 A module that fails to import is logged at ERROR with its traceback, and does not stop the API.
 
-## What is parked here
+## Nothing is parked here any more
 
-`woop.py` — the WOOP/Onfleet delivery integration. It now requires a token on both resources, and
-it is no longer loaded. Its organisation and team identifiers are still hard-coded, its calls still
-ignore their HTTP status: it is kept as the starting point of the integration, not as maintained
-code.
+`woop.py` — the WOOP/Onfleet delivery integration, the reason this loader exists — was removed on
+11 November 2026: the client integration is gone, the module had not been loaded since the loader
+became a setting, and it was the only reason `EXT_MODULES` had a known value to document. The
+loader and this directory stay, empty, for the next extension that an operator actually wants.

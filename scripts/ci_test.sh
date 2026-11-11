@@ -22,7 +22,7 @@
 # lower it.
 set -eu
 
-FLOOR=77
+FLOOR=79
 
 python -m pip install --quiet -r sources/requirements-test.txt
 python -m coverage erase

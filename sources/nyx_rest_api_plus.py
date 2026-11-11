@@ -108,6 +108,10 @@ v3.22.29 09/Nov/2026 A facet request on an index created without a mapping answe
                      returning 500: `get_mappings` read `mappings.properties` unguarded, and a
                      `KeyError` came out of `queryFilter`. An unknown mapping now means "no
                      `.keyword` sub-field", which is what the facet code already handles.
+v3.22.30 11/Nov/2026 The WOOP/Onfleet extension is removed. It had not been loaded since the
+                     extension loader became an explicit setting (`EXT_MODULES`, empty on this
+                     instance), and the client integration it existed for is gone. The loader and
+                     `sources/extensions/` stay for the next extension.
 """
 
 import json
