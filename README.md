@@ -215,7 +215,7 @@ Three files hold the logic the routes call through:
   thread, and the container's startup (`nyx_rest_helper.py` 0 → 100 %).
 
 What is left, by size: the `__main__` of `nyx_rest_api_plus.py`, `routes/data.py` at 63 %,
-`routes/misc.py` at 66 %, `extensions/woop.py` at 27 % and `es_helpers.py` at 63 %.
+`routes/misc.py` at 66 % and `es_helpers.py` at 63 %.
 
 ## Language
 
