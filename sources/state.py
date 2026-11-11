@@ -10,7 +10,7 @@ import threading
 from datetime import datetime, timedelta
 
 # Application metadata
-VERSION = "3.22.29"
+VERSION = "3.22.30"
 MODULE = "nyx_rest_" + str(os.getpid())
 
 # Config-derived constants (set during startup in nyx_rest_api_plus.py)
