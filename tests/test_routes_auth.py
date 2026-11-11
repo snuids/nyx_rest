@@ -353,7 +353,7 @@ class PreferencesTests(RouteTestCase):
         self.assertEqual(code, 200)
         stored = self.es.docs["nyx_user"]["alice@example.com"]
         self.assertEqual(stored["theme"], "dark")
-        # rien d'autre ne bouge : ni le mot de passe, ni les privileges, ni la langue
+        # nothing else moves: not the password, not the privileges, not the language
         for field in ("password", "privileges", "language", "login"):
             self.assertEqual(stored[field], before[field], field)
 
@@ -401,8 +401,8 @@ class PreferencesTests(RouteTestCase):
             "login": "carol", "privileges": ["YUL"], "language": "en", "filters": [],
             "password": pbkdf2_sha256.hash(PASSWORD),
         }
-        # Le faux cluster ne filtre pas les requetes : on lui dit quelle fiche la recherche
-        # par login doit rendre, sinon la connexion tombe sur le premier compte de l'index.
+        # The fake cluster does not filter queries: it is told which record the lookup by login
+        # must return, otherwise the sign-in falls back to the first account of the index.
         self.es.foreign_hits["nyx_user"] = [{
             "_id": "carol@example.com", "_index": "nyx_user",
             "_source": dict(self.es.docs["nyx_user"]["carol@example.com"]),

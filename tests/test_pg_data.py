@@ -302,7 +302,7 @@ class ExportTests(PgDataTestCase):
 
             with open(result["file"], encoding="utf8") as handle:
                 header = handle.readline().strip()
-            # `df.to_csv(...)` sans `index=False`: la premiere colonne est l'index pandas.
+            # `df.to_csv(...)` without `index=False`: the first column is the pandas index.
             self.assertEqual(header, ",name")
 
     def test_a_date_column_reaches_the_file_as_a_date(self):

@@ -449,8 +449,8 @@ class CleanupTests(HelperTestCase):
                     self.assertLogs(level="ERROR") as logs:
                 helper.sendMail(task, self.message())
 
-            # la suppression est justement empechee: l'archive reste, on la retire pour les
-            # autres tests qui comptent les fichiers du repertoire courant.
+            # the deletion is precisely what was prevented: the archive stays behind, so it is
+            # removed here for the other tests that count the files of the working directory.
             for name in os.listdir("."):
                 if name.endswith(".zip"):
                     Path(name).unlink()
