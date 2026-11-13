@@ -196,6 +196,65 @@ class CandidateTests(unittest.TestCase):
         self.assertEqual(github_oauth.candidates("", None), [])
 
 
+class ProfileTests(unittest.TestCase):
+    """`fetch_profile` — what GitHub is willing to say about the identity."""
+
+    def profile(self, user, emails=None):
+        responses = {github_oauth.GITHUB_USER: FakeResponse(200, user)}
+        if emails is not None:
+            responses[github_oauth.GITHUB_EMAILS] = FakeResponse(200, emails)
+        return github_oauth.fetch_profile(FakeSession(responses), "gho_x")
+
+    def test_the_name_is_split_on_the_last_space(self):
+        profile = self.profile({"login": "snuids", "name": "Arnaud Marchand"}, [])
+
+        self.assertEqual(profile["firstname"], "Arnaud")
+        self.assertEqual(profile["lastname"], "Marchand")
+        self.assertEqual(profile["name"], "Arnaud Marchand")
+
+    def test_a_compound_last_name_stays_whole(self):
+        profile = self.profile({"login": "vm", "name": "Jean de La Fontaine"}, [])
+
+        self.assertEqual(profile["firstname"], "Jean")
+        self.assertEqual(profile["lastname"], "de La Fontaine")
+
+    def test_a_single_word_is_a_first_name(self):
+        profile = self.profile({"login": "cher", "name": "Cher"}, [])
+
+        self.assertEqual((profile["firstname"], profile["lastname"]), ("Cher", ""))
+
+    def test_an_empty_name_gives_nothing_to_split(self):
+        for name in (None, "", "   "):
+            with self.subTest(name=name):
+                profile = self.profile({"login": "wm8233", "name": name}, [])
+                self.assertEqual((profile["firstname"], profile["lastname"]), ("", ""))
+
+    def test_only_a_verified_address_is_kept(self):
+        profile = self.profile({"login": "snuids", "email": "public@example.com"},
+                              [{"email": "typed@example.com", "primary": True, "verified": False},
+                               {"email": "real@example.com", "primary": False, "verified": True}])
+
+        self.assertEqual(profile["email"], "real@example.com",
+                         "an unverified address must never be the key an account is matched on")
+        self.assertEqual(profile["public_email"], "public@example.com",
+                         "the published address is reported, not used")
+
+    def test_the_profile_has_no_phone_because_github_has_none(self):
+        profile = self.profile({"login": "snuids", "name": "Arnaud Marchand"}, [])
+
+        self.assertNotIn("phone", profile)
+
+    def test_the_narrow_contract_still_answers_the_pair(self):
+        session = FakeSession({
+            github_oauth.GITHUB_USER: FakeResponse(200, {"login": "snuids", "name": "A M"}),
+            github_oauth.GITHUB_EMAILS: FakeResponse(200, [
+                {"email": "me@example.com", "primary": True, "verified": True}]),
+        })
+
+        self.assertEqual(github_oauth.fetch_identity(session, "gho_x"),
+                         ("snuids", "me@example.com"))
+
+
 class SettingsOverride:
     """Points the three GitHub settings at a test value, and puts them back."""
 
@@ -251,13 +310,21 @@ class GithubLoginRouteTests(SettingsOverride, RouteTestCase):
         self.addCleanup(setattr, auth_routes, "finalize_login", original)
         return captured
 
-    def fake_github(self, login="someone", email="someone@example.com"):
+    def fake_github(self, login="someone", email="someone@example.com", name=None):
+        profile = {"login": login, "name": name or "", "email": email,
+                   "public_email": "", "firstname": "", "lastname": ""}
+        if name:
+            profile["firstname"], profile["lastname"] = github_oauth.split_name(name)
+        # `auth_routes.github_oauth` **is** the module: patch it, and keep the originals read
+        # *before* the first patch. Reading them afterwards hands back the lambda, the restore
+        # becomes a no-op and every later test in the file runs against the fake.
+        original = {name: getattr(github_oauth, name)
+                    for name in ("exchange_code", "fetch_identity", "fetch_profile")}
         auth_routes.github_oauth.exchange_code = lambda *a, **k: "gho_secret_token"
+        auth_routes.github_oauth.fetch_profile = lambda *a, **k: dict(profile)
         auth_routes.github_oauth.fetch_identity = lambda *a, **k: (login, email)
-        self.addCleanup(setattr, auth_routes.github_oauth, "exchange_code",
-                        github_oauth.exchange_code)
-        self.addCleanup(setattr, auth_routes.github_oauth, "fetch_identity",
-                        github_oauth.fetch_identity)
+        for name, function in original.items():
+            self.addCleanup(setattr, github_oauth, name, function)
 
     # -- the state -------------------------------------------------------
     def test_the_state_endpoint_is_off_until_configured(self):
@@ -394,7 +461,8 @@ class GithubLoginRouteTests(SettingsOverride, RouteTestCase):
     def test_the_inactive_setting_files_a_disabled_account_without_privileges(self):
         self.set_policy("inactive")
         self.es.docs["nyx_user"] = {}
-        self.fake_github(login="stranger", email="stranger@example.com")
+        self.fake_github(login="stranger", email="stranger@example.com",
+                         name="Arnaud Marchand")
         _, state_value, _ = self.start_sign_in()
 
         _, payload, _ = self.sign_in(state_value)
@@ -410,6 +478,10 @@ class GithubLoginRouteTests(SettingsOverride, RouteTestCase):
         self.assertEqual(document["email"], "stranger@example.com")
         self.assertEqual(document["source"], "github")
         self.assertNotIn("password", document)
+        # GitHub carries a name when the person filled it, and has no phone at all
+        self.assertEqual(document["firstname"], "Arnaud")
+        self.assertEqual(document["lastname"], "Marchand")
+        self.assertNotIn("phone", document)
 
     def test_the_setting_is_read_without_its_case_or_spaces(self):
         self.set_policy("  INACTIVE  ")

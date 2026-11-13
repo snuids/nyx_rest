@@ -118,6 +118,14 @@ v3.22.31 11/Nov/2026 The console submits a report through the API instead of for
 v3.22.32 11/Nov/2026 An inactive account no longer receives a token
 
 v3.22.33 13/Nov/2026 GitHub identities that have no account can be filed, disabled
+
+v3.22.34 13/Nov/2026 The account filed for a GitHub identity carries its name
+  `github_oauth.fetch_profile` keeps what the profile says — `login`, `name` split on the last space,
+  and the verified address — where `fetch_identity` only carried the pair. The filed account gets its
+  `firstname`/`lastname` (falling back on the login when the profile has no name) and the verified
+  `email`; an address typed into GitHub but never confirmed is logged and not stored, and no phone is
+  ever available because GitHub has none.
+
   `GITHUB_UNKNOWN_ACCOUNTS=inactive` turns an unknown GitHub identity into a `nyx_user` document
   that is disabled and carries no privileges, instead of `Bad Credentials`. The sign-in is still
   refused — `finalize_login` answers `ACCOUNT_INACTIVE` and the console shows the page explaining

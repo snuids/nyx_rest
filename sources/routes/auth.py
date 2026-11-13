@@ -99,7 +99,7 @@ def github_unknown_account_policy():
     return str(getattr(settings, "GITHUB_UNKNOWN_ACCOUNTS", "refuse") or "").strip().lower()
 
 
-def provision_inactive_account(es, login, email):
+def provision_inactive_account(es, profile):
     """Files a disabled, privilege-less `nyx_user` for a GitHub identity nobody knows.
 
     The account cannot sign in — `finalize_login` refuses it, so the caller ends up answering
@@ -107,13 +107,18 @@ def provision_inactive_account(es, login, email):
     the request in the users list: activate it, grant the privileges, and the person then signs in
     with GitHub without ever holding a password on this platform.
 
-    The document keeps the shape the console expects: `_id` is the address, `login` the short name.
+    The document keeps the shape the console expects: `_id` is the address when GitHub gives a
+    verified one, `login` the short name. The name comes from the profile, and falls back on the
+    login when the person never filled it; the phone is left out because GitHub has no such field —
+    an administrator completes it when they call back.
     """
+    login = profile.get("login") or ""
+    email = profile.get("email") or ""
     document = {
         "login": login or email,
-        "firstname": login or "",
-        "lastname": "",
-        "email": email or "",
+        "firstname": profile.get("firstname") or login,
+        "lastname": profile.get("lastname") or "",
+        "email": email,
         "privileges": [],
         "filters": [],
         "language": "en",
@@ -321,7 +326,8 @@ def register(api, name_space):
                         session, settings.GITHUB_CLIENT_ID, settings.GITHUB_CLIENT_SECRET,
                         code, settings.GITHUB_REDIRECT_URI,
                     )
-                    login, email = github_oauth.fetch_identity(session, token)
+                    profile = github_oauth.fetch_profile(session, token)
+                    login, email = profile["login"], profile["email"]
             except github_oauth.GithubError:
                 record_auth_failure("github", ip, "GITHUB_EXCHANGE", agent)
                 state.auth_failures_total += 1
@@ -335,9 +341,12 @@ def register(api, name_space):
                 if github_unknown_account_policy() == "inactive":
                     # An account is filed, disabled and without privileges: `finalize_login` refuses
                     # it, so nothing is granted — the administrator decides afterwards.
-                    usr = provision_inactive_account(state.es, login, email)
-                    logger.info("GitHub sign-in for %s (%s): disabled account created, no privileges",
-                                login, email or "no e-mail")
+                    usr = provision_inactive_account(state.es, profile)
+                    logger.info("GitHub sign-in for %s (%s): disabled account created for %s %s, "
+                                "no privileges; published e-mail %s",
+                                login, email or "no verified e-mail",
+                                profile.get("firstname") or "-", profile.get("lastname") or "",
+                                profile.get("public_email") or "none")
                     return finalize_login(usr, {'login': usr['_source']['login'],
                                                 'app': data.get('app', 'console')},
                                           state.es, state.conn)
