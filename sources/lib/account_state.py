@@ -67,6 +67,44 @@ def account_is_inactive(usr):
     return inactive
 
 
+# How long a cut session keeps answering `ACCOUNT_INACTIVE` rather than `UNKNOWN_TOKEN`. Long enough
+# for the console's concurrent calls, and any retry, to hear the same reason; short enough to stay
+# a footnote in Redis.
+CUT_SECONDS = 300
+
+CUT_PREFIX = "nyx_tokcut_"
+
+
+def cut_token(token):
+    """Remembers *why* a token disappeared, so the next call does not say "unknown token".
+
+    Dropping the token is not enough: the console makes several calls at once, and the ones that
+    arrive after the drop would answer `UNKNOWN_TOKEN` — the generic "session lost" story, with a
+    toast inviting the person to try again, instead of the page that says the account was disabled.
+    """
+    if not token:
+        return
+    try:
+        state.redisserver.set(CUT_PREFIX + str(token), "ACCOUNT_INACTIVE", CUT_SECONDS)
+    except Exception:
+        logger.warning("Unable to record why token %s ended", token[:8] if token else "", exc_info=True)
+
+
+def refusal_for_cut_token(token):
+    """The code to answer for a token that no longer exists: `ACCOUNT_INACTIVE`, or None."""
+    if not token:
+        return None
+    try:
+        value = state.redisserver.get(CUT_PREFIX + str(token))
+    except Exception:
+        return None
+    if value is None:
+        return None
+    if isinstance(value, bytes):
+        value = value.decode("utf-8", "ignore")
+    return str(value) or None
+
+
 def forget(docid):
     """Drop the cached answer, so the next request reads the document again.
 

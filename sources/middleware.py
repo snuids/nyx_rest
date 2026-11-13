@@ -131,8 +131,13 @@ def getUserFromToken(request, token=None, fresh=False):
     return None
 
 
-def revoke_token(token):
-    """Ends a session on this side: the token is forgotten everywhere, it cannot be replayed."""
+def revoke_token(token, reason="ACCOUNT_INACTIVE"):
+    """Ends a session on this side: the token is forgotten everywhere, it cannot be replayed.
+
+    `reason` is left behind so the calls that were already in flight answer the same code as the one
+    that cut the session, instead of "unknown token".
+    """
+    account_state.cut_token(token)
     state.tokens.pop(token, None)
     try:
         state.redisserver.delete("nyx_tok_" + str(token))
@@ -210,7 +215,9 @@ def token_required(*roles):
                     if refreshed is not None:
                         usr = refreshed
                 if usr is None:
-                    ret = {'error': "UNKNOWN_TOKEN"}
+                    # A token dropped because its account was disabled says why for a few minutes:
+                    # the console's concurrent calls must not read that as a lost session.
+                    ret = {'error': account_state.refusal_for_cut_token(token) or "UNKNOWN_TOKEN"}
                 elif account_state.account_is_inactive(usr):
                     # The account was disabled while its session was open: the token is a
                     # snapshot of the sign-in and Redis keeps it for a day, so the document is

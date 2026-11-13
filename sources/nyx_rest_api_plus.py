@@ -122,6 +122,14 @@ v3.22.33 13/Nov/2026 GitHub identities that have no account can be filed, disabl
 v3.22.34 13/Nov/2026 The account filed for a GitHub identity carries its name
 
 v3.22.35 13/Nov/2026 A disabled account loses its session at the next request
+
+v3.22.36 13/Nov/2026 A cut session says why, to every call in flight
+  Dropping the token of a disabled account was not enough: the console makes several calls at once
+  and the ones landing after the drop read `UNKNOWN_TOKEN` — the "lost session, try again" story —
+  while the first one said `ACCOUNT_INACTIVE`. The reason is now left in Redis for five minutes
+  (`nyx_tokcut_<token>`), so every call hears the same answer and the console lands on the page that
+  explains the account was disabled. After that the token is simply unknown.
+
   `inactive` was read once, when the token was minted: an account disabled by an administrator kept
   its session for the day Redis holds the token. `token_required` now asks `lib/account_state.py`
   whether the account behind the token is still allowed in; if not it drops the token and answers

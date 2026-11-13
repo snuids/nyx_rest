@@ -101,6 +101,34 @@ class DisabledSessionTests(RouteTestCase):
         self.assertNotIn(self.token, self.state.tokens)
         self.assertIsNone(self.redis.store.get("nyx_tok_" + self.token))
 
+    def test_the_calls_that_arrive_after_the_cut_still_hear_the_reason(self):
+        # the console makes several calls at once: the ones landing after the drop must not read
+        # "unknown token", which the console turns into "lost session, try again"
+        self.es.docs["nyx_user"]["alice@example.com"]["inactive"] = True
+        account_state.forget("alice@example.com")
+
+        self.ask()                          # cuts the session
+        code, payload, _ = self.ask()       # another call, same dead token
+
+        self.assertEqual((code, payload["error"]), (401, "ACCOUNT_INACTIVE"))
+        self.assertEqual(self.redis.ttls.get("nyx_tokcut_" + self.token), 300)
+
+    def test_the_reason_expires(self):
+        # five minutes later the token is simply unknown: the console is on the page by then
+        self.es.docs["nyx_user"]["alice@example.com"]["inactive"] = True
+        account_state.forget("alice@example.com")
+        self.ask()
+        del self.redis.store["nyx_tokcut_" + self.token]
+
+        code, payload, _ = self.ask()
+
+        self.assertEqual((code, payload["error"]), (401, "UNKNOWN_TOKEN"))
+
+    def test_a_token_that_never_existed_still_says_unknown(self):
+        code, payload, _ = self.ask("never-issued")
+
+        self.assertEqual((code, payload["error"]), (401, "UNKNOWN_TOKEN"))
+
     def test_a_cut_session_is_not_told_apart_from_a_lost_token_by_accident(self):
         # the console reads the body, the status is for everything else: both must say the truth
         self.es.docs["nyx_user"]["alice@example.com"]["inactive"] = True
