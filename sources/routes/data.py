@@ -24,6 +24,7 @@ from es_helpers import (
     can_use_indice, is_nyx_user_indice, can_read_nyx_user, requires_admin_for_write, is_admin,
 )
 from es_read import fetch_document, find_user_by_login, is_not_found
+from lib import account_state
 from common import loadData, get_mappings, kibanaData
 from pg_common import loadPGData, getAppByID, get_sql_server_connection
 from helpers.sql_queries import build_crud_query
@@ -575,6 +576,10 @@ def register(app, api, name_space):
                         dataobj["mustResetPassword"] = True
                     data = json.dumps(dataobj)
                 state.es.index(index=index, body=data, id=object)
+                if index == "nyx_user":
+                    # An administrator may have just disabled the account: the cached answer is
+                    # dropped so the change takes effect on the next request, not in a minute.
+                    account_state.forget(object)
             except:
                 logger.error("unable to post data", exc_info=True)
                 return {'error': "unable to post data"}
@@ -583,6 +588,8 @@ def register(app, api, name_space):
             try:
                 ret = state.es.delete(index=index, id=object)
                 logger.info(ret)
+                if index == "nyx_user":
+                    account_state.forget(object)
             except:
                 return {'error': "unable to delete data"}
 
