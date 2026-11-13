@@ -114,6 +114,14 @@ v3.22.30 11/Nov/2026 The WOOP/Onfleet extension is removed. It had not been load
                      `sources/extensions/` stay for the next extension.
 
 v3.22.31 11/Nov/2026 The console submits a report through the API instead of forging the job
+
+v3.22.32 11/Nov/2026 An inactive account no longer receives a token
+  `nyx_user.inactive` (opt-in: a document without the field is active) is checked in
+  `finalize_login`, the single place every sign-in path goes through — password, GitHub, Google. The
+  answer is `{"error": "ACCOUNT_INACTIVE"}`, which the console turns into the page explaining what to
+  do. The check runs after the password is verified, so it never tells an anonymous caller whether an
+  address exists, and it does not count as a wrong password in the brute-force counters.
+
   `/report/generate` and `/report/regenerate` build the job from the stored definition, the
   authenticated session and an identifier of their own; the caller sends an id and parameter values.
   `/sendmessage` stays closed to non-administrators, and a `reporteditor` account can finally generate
