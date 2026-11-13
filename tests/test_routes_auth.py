@@ -91,6 +91,52 @@ class LoginTests(RouteTestCase):
         self.assertTrue(any("nyx_kibananyx=" in c for c in cookies))
         self.assertEqual(token in self.state.tokens, True)
 
+    # -- the inactive flag --------------------------------------------------
+    def test_an_inactive_account_gets_no_token(self):
+        self.es.docs["nyx_user"]["alice@example.com"]["inactive"] = True
+
+        code, body, response = self._login("alice@example.com", PASSWORD)
+
+        self.assertEqual(body["error"], "ACCOUNT_INACTIVE")
+        self.assertNotIn("cred", body)
+        self.assertEqual(self.state.tokens, {}, "aucun jeton ne doit etre emis")
+        self.assertEqual([k for k in self.redis.store if k.startswith("nyx_tok_")], [])
+
+    def test_the_flag_is_read_the_way_a_document_may_carry_it(self):
+        # a hand-written or imported document may say "true" or 1 rather than true
+        for value in ("true", "TRUE", 1, "1"):
+            with self.subTest(value=value):
+                self.state.tokens.clear()
+                self.es.docs["nyx_user"]["alice@example.com"]["inactive"] = value
+                _, body, _ = self._login("alice@example.com", PASSWORD)
+                self.assertEqual(body["error"], "ACCOUNT_INACTIVE")
+
+    def test_an_explicit_false_leaves_the_account_active(self):
+        self.es.docs["nyx_user"]["alice@example.com"]["inactive"] = False
+
+        _, body, _ = self._login("alice@example.com", PASSWORD)
+
+        self.assertEqual(body["error"], "")
+        self.assertTrue(body["cred"]["token"])
+
+    def test_an_account_without_the_field_stays_active(self):
+        # the whole point of the opt-in flag: no migration, no lock-out
+        self.assertNotIn("inactive", self.es.docs["nyx_user"]["alice@example.com"])
+
+        _, body, _ = self._login("alice@example.com", PASSWORD)
+
+        self.assertEqual(body["error"], "")
+        self.assertTrue(body["cred"]["token"])
+
+    def test_the_refusal_is_not_counted_as_a_wrong_password(self):
+        self.es.docs["nyx_user"]["alice@example.com"]["inactive"] = True
+
+        self._login("alice@example.com", PASSWORD)
+
+        self.assertEqual(self.state.auth_failures_total, 0)
+        self.assertEqual(self.redis.get("loginfail:user:alice@example.com"), None,
+                         "un mot de passe correct ne doit pas remplir le compteur")
+
     def test_a_login_clears_the_failure_counters(self):
         self._login("alice@example.com", "mauvais")
         self._login("alice@example.com", PASSWORD)

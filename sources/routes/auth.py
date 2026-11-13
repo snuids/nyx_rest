@@ -122,7 +122,32 @@ def user_document_id(user):
     return candidate
 
 
+def is_inactive(usr):
+    """Whether an account is disabled.
+
+    The field is opt-in: a `nyx_user` document that does not carry `inactive` is an **active**
+    account, so nothing had to be migrated when the flag was introduced. A hand-written document
+    may carry `"true"` or `1` rather than a boolean, hence the tolerant reading.
+    """
+    value = ((usr or {}).get("_source") or {}).get("inactive", False)
+    if isinstance(value, str):
+        return value.strip().lower() in ("true", "1", "yes")
+    return bool(value)
+
+
 def finalize_login(usr, data, es, conn):
+    """Mint the session, or refuse it.
+
+    An inactive account never gets a token — this is the single place every sign-in path goes
+    through (password, GitHub, Google), which is why the check lives here rather than in each route.
+    The console turns the `ACCOUNT_INACTIVE` answer into the page that explains what to do.
+    """
+    if is_inactive(usr):
+        logger.warning("Sign-in refused, account inactive: %s",
+                       (usr.get("_source") or {}).get("login"))
+        state.auth_blocked_total += 1
+        return jsonify({'error': 'ACCOUNT_INACTIVE'})
+
     token = uuid.uuid4()
 
     with state.tokenlock:
