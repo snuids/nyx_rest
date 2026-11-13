@@ -57,7 +57,9 @@ class FakeES:
     """
 
     def __init__(self, docs=None, foreign_hits=None, mappings=None, aggregations=None):
-        self.docs = {index: dict(values) for index, values in (docs or {}).items()}
+        # Deep, not per-index: a test that flips a field on a fixture (`inactive`, a password)
+        # would otherwise edit the class attribute and hand the change to the next test.
+        self.docs = copy.deepcopy(docs or {})
         self.foreign_hits = foreign_hits or {}
         # field -> type, per index: `common.get_mappings` reads them to decide whether a facet
         # is served on the field itself or on its `.keyword` sub-field

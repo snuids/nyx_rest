@@ -31,6 +31,8 @@ from auth.double_phase import verify_double_code
 from auth.role_mapper import extract_roles_from_ad
 import login_guard as guard
 from lib import github_oauth
+from lib import account_state
+from lib.account_state import is_inactive
 from es_read import find_user_by_login, fetch_document
 
 logger = logging.getLogger()
@@ -132,6 +134,7 @@ def provision_inactive_account(es, profile):
     except TypeError:
         # elasticsearch-py 7 names the same argument `body`.
         es.index(index="nyx_user", id=document_id, body=document, refresh="wait_for")
+    account_state.forget(document_id)
     return {"_id": document_id, "_index": "nyx_user", "_source": document}
 
 
@@ -165,19 +168,6 @@ def user_document_id(user):
     if error == "" and document and document.get("_id"):
         return document["_id"]
     return candidate
-
-
-def is_inactive(usr):
-    """Whether an account is disabled.
-
-    The field is opt-in: a `nyx_user` document that does not carry `inactive` is an **active**
-    account, so nothing had to be migrated when the flag was introduced. A hand-written document
-    may carry `"true"` or `1` rather than a boolean, hence the tolerant reading.
-    """
-    value = ((usr or {}).get("_source") or {}).get("inactive", False)
-    if isinstance(value, str):
-        return value.strip().lower() in ("true", "1", "yes")
-    return bool(value)
 
 
 def finalize_login(usr, data, es, conn):

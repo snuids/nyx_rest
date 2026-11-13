@@ -120,6 +120,16 @@ v3.22.32 11/Nov/2026 An inactive account no longer receives a token
 v3.22.33 13/Nov/2026 GitHub identities that have no account can be filed, disabled
 
 v3.22.34 13/Nov/2026 The account filed for a GitHub identity carries its name
+
+v3.22.35 13/Nov/2026 A disabled account loses its session at the next request
+  `inactive` was read once, when the token was minted: an account disabled by an administrator kept
+  its session for the day Redis holds the token. `token_required` now asks `lib/account_state.py`
+  whether the account behind the token is still allowed in; if not it drops the token and answers
+  `ACCOUNT_INACTIVE` (401). The document is read through a one-minute Redis cache, so the API does
+  not take an Elasticsearch round trip per call, and the routes that write a `nyx_user` document
+  drop that cache, so an administrator's decision takes effect on the next request. Any failure —
+  Redis down, document unreadable — is read as active: the check closes a door, it does not guard it.
+
   `github_oauth.fetch_profile` keeps what the profile says — `login`, `name` split on the last space,
   and the verified address — where `fetch_identity` only carried the pair. The filed account gets its
   `firstname`/`lastname` (falling back on the login when the profile has no name) and the verified

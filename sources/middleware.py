@@ -13,6 +13,7 @@ from flask import request, jsonify
 from cachetools import cached, TTLCache
 
 import state
+from lib import account_state
 from password_policy import must_change_password
 
 logger = logging.getLogger()
@@ -28,6 +29,7 @@ BEARER_PREFIX = "bearer "
 AUTH_ERROR_STATUS = {
     "NO_TOKEN": 401,
     "UNKNOWN_TOKEN": 401,
+    "ACCOUNT_INACTIVE": 401,
     "MUST_CHANGE_PASSWORD": 403,
     "NO_PRIVILEGE": 403,
 }
@@ -129,6 +131,17 @@ def getUserFromToken(request, token=None, fresh=False):
     return None
 
 
+def revoke_token(token):
+    """Ends a session on this side: the token is forgotten everywhere, it cannot be replayed."""
+    state.tokens.pop(token, None)
+    try:
+        state.redisserver.delete("nyx_tok_" + str(token))
+    except Exception:
+        # Redis unreachable: the in-memory copy is already gone on this worker, and the others
+        # will refuse on the account state, not on the token.
+        logger.warning("Unable to drop token %s from redis", fingerprint(token), exc_info=True)
+
+
 def pushHistoryToELK(request, timespan, usr, token, error):
     rec = {
         "url": request.path,
@@ -198,6 +211,14 @@ def token_required(*roles):
                         usr = refreshed
                 if usr is None:
                     ret = {'error': "UNKNOWN_TOKEN"}
+                elif account_state.account_is_inactive(usr):
+                    # The account was disabled while its session was open: the token is a
+                    # snapshot of the sign-in and Redis keeps it for a day, so the document is
+                    # what decides. The session ends here rather than at its natural expiry.
+                    logger.warning("Session ended, account disabled: %s",
+                                   usr.get("login") or usr.get("id"))
+                    revoke_token(token)
+                    ret = {'error': "ACCOUNT_INACTIVE"}
                 elif must_change_password(usr, request.path):
                     # Provisional password: the token only opens the password change and
                     # the logout. This is not a courtesy of the interface.
