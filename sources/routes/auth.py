@@ -16,7 +16,7 @@ from oauth2client import client
 from passlib.hash import pbkdf2_sha256
 from flask import request, jsonify, make_response
 from flask_restx import Resource, fields
-from datetime import datetime
+from datetime import datetime, timezone
 
 import state
 from config import settings
@@ -88,6 +88,46 @@ def find_account(es, login, email):
         if hit is not None:
             return hit
     return None
+
+
+def github_unknown_account_policy():
+    """`refuse` (default) or `inactive`.
+
+    Anything else is read as `refuse`: a misspelt value must not open a door, and `refuse` is what
+    the platform did before the setting existed.
+    """
+    return str(getattr(settings, "GITHUB_UNKNOWN_ACCOUNTS", "refuse") or "").strip().lower()
+
+
+def provision_inactive_account(es, login, email):
+    """Files a disabled, privilege-less `nyx_user` for a GitHub identity nobody knows.
+
+    The account cannot sign in — `finalize_login` refuses it, so the caller ends up answering
+    `ACCOUNT_INACTIVE` — which means creating it grants nothing. It exists so an administrator sees
+    the request in the users list: activate it, grant the privileges, and the person then signs in
+    with GitHub without ever holding a password on this platform.
+
+    The document keeps the shape the console expects: `_id` is the address, `login` the short name.
+    """
+    document = {
+        "login": login or email,
+        "firstname": login or "",
+        "lastname": "",
+        "email": email or "",
+        "privileges": [],
+        "filters": [],
+        "language": "en",
+        "inactive": True,
+        "source": "github",
+        "created": datetime.now(timezone.utc).isoformat(),
+    }
+    document_id = email or login
+    try:
+        es.index(index="nyx_user", id=document_id, document=document, refresh="wait_for")
+    except TypeError:
+        # elasticsearch-py 7 names the same argument `body`.
+        es.index(index="nyx_user", id=document_id, body=document, refresh="wait_for")
+    return {"_id": document_id, "_index": "nyx_user", "_source": document}
 
 
 def setACookie(privilege, privileges, resp, token):
@@ -292,6 +332,15 @@ def register(api, name_space):
             # token: the platform mints its own (finalize_login).
             usr = find_account(state.es, login, email)
             if usr is None:
+                if github_unknown_account_policy() == "inactive":
+                    # An account is filed, disabled and without privileges: `finalize_login` refuses
+                    # it, so nothing is granted — the administrator decides afterwards.
+                    usr = provision_inactive_account(state.es, login, email)
+                    logger.info("GitHub sign-in for %s (%s): disabled account created, no privileges",
+                                login, email or "no e-mail")
+                    return finalize_login(usr, {'login': usr['_source']['login'],
+                                                'app': data.get('app', 'console')},
+                                          state.es, state.conn)
                 # Only an existing account signs in: GitHub says who you are, `nyx_user` says what
                 # you may open, and an unknown account has no privileges to grant.
                 logger.warning("GitHub sign-in for %s (%s): no NYX account", login, email or "no e-mail")

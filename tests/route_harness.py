@@ -95,6 +95,13 @@ class FakeES:
     def search(self, index=None, body=None, size=None, **kwargs):
         self.calls.append(("search", index, body))
         self.searches.append((index, body))
+        if isinstance(body, str):
+            # `loadData` posts its query as JSON text, which the real client accepts; decoding it
+            # here keeps the `term` and `ids` filters below working for routes that go through it.
+            try:
+                body = json.loads(body)
+            except ValueError:
+                body = None
         hits = self.foreign_hits.get(index)
         if hits is None:
             hits = [{"_id": key, "_index": name, "_source": copy.deepcopy(value)}
@@ -126,6 +133,11 @@ class FakeES:
         return {"hits": {"hits": list(hits), "total": {"value": len(hits)}},
                 "aggregations": {field: {"buckets": buckets}
                                  for field, buckets in aggregated.items()}}
+
+    def clear_scroll(self, body=None, **kwargs):
+        """`loadData` closes its scroll once the page is read; the fake holds nothing open."""
+        self.calls.append(("clear_scroll", None, body))
+        return {"succeeded": True, "_nodes": {"total": 1, "successful": 1}}
 
     def info(self, **kwargs):
         # `common.get_es_info` calls es.info(request_timeout=5)

@@ -158,6 +158,21 @@ GITHUB_CLIENT_SECRET=...    # its secret — never reaches the browser
 GITHUB_REDIRECT_URI=https://HOST/oauth   # the URL registered on the app, the console's page
 ```
 
+### Identities that have no account
+
+`GITHUB_UNKNOWN_ACCOUNTS` decides what happens to a GitHub identity nobody has filed yet:
+
+| Value | Behaviour |
+|---|---|
+| `refuse` (default) | `Bad Credentials`, the same answer as a wrong password. Nothing is written. |
+| `inactive` | A `nyx_user` document is created **disabled and without privileges** (`inactive: true`, `privileges: []`, `source: "github"`), and the sign-in is refused with `ACCOUNT_INACTIVE` — the console shows the page that explains the account must be reactivated. |
+
+The value is read trimmed and lower-cased; anything else is read as `refuse`, so a typo closes the
+door rather than opening it. Filing an account grants nothing: `finalize_login` refuses it until an
+administrator clears `inactive` **and** grants the privileges, at which point the person signs in
+with GitHub without ever holding a password here. An identity that already has an account is
+untouched by the setting.
+
 `GET /api/v1/cred/oauth/state` returns `{url}` — the GitHub authorize URL — and sets a one-time
 `nyx_oauth_state` cookie (HttpOnly, SameSite=Lax, 10 minutes). `POST /api/v1/cred/login_github`
 `{code, state}` exchanges the code, keeps only the identity (the GitHub token is used and dropped),

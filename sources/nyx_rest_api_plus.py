@@ -116,6 +116,15 @@ v3.22.30 11/Nov/2026 The WOOP/Onfleet extension is removed. It had not been load
 v3.22.31 11/Nov/2026 The console submits a report through the API instead of forging the job
 
 v3.22.32 11/Nov/2026 An inactive account no longer receives a token
+
+v3.22.33 13/Nov/2026 GitHub identities that have no account can be filed, disabled
+  `GITHUB_UNKNOWN_ACCOUNTS=inactive` turns an unknown GitHub identity into a `nyx_user` document
+  that is disabled and carries no privileges, instead of `Bad Credentials`. The sign-in is still
+  refused — `finalize_login` answers `ACCOUNT_INACTIVE` and the console shows the page explaining
+  it — so filing an account grants nothing: an administrator clears `inactive` and grants the
+  privileges. The default stays `refuse`, and any other value is read as `refuse`, so a typo closes
+  the door rather than opening it.
+
   `nyx_user.inactive` (opt-in: a document without the field is active) is checked in
   `finalize_login`, the single place every sign-in path goes through — password, GitHub, Google. The
   answer is `{"error": "ACCOUNT_INACTIVE"}`, which the console turns into the page explaining what to

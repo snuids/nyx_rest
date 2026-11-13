@@ -110,6 +110,14 @@ class Settings(BaseSettings):
     # The URL registered on the GitHub OAuth app — the console's `/oauth` page, absolute.
     GITHUB_REDIRECT_URI: str = ""
 
+    # What to do with a GitHub identity that has no `nyx_user` account.
+    # `refuse` (the default) turns it away: GitHub says who you are, `nyx_user` says what you may
+    # open, and an unknown identity has nothing to open. `inactive` files a request instead — the
+    # account is created **disabled and without privileges**, so the person lands on the page that
+    # explains it and an administrator decides whether to activate it and what to grant. Any other
+    # value is read as `refuse`: a typo must not open a door.
+    GITHUB_UNKNOWN_ACCOUNTS: str = "refuse"
+
     # Kept for the (now removed) GitHub token exchange and for any JWT a client may ask for; the
     # sign-in itself mints a session token, not a JWT.
     OAUTH_CLIENT_SECRET: str = ""
