@@ -73,15 +73,29 @@ def exchange_code(session, client_id, client_secret, code, redirect_uri=None):
     return token
 
 
-def fetch_identity(session, access_token):
-    """`(login, email)` for the token. The e-mail may be empty; the login may not."""
+def fetch_profile(session, access_token):
+    """What GitHub says about the identity: login, name, and the address it can be matched on.
+
+    `name` is the free-form field of the profile: null when the person left it empty, which is
+    common on machine accounts. It is split on the last space, because GitHub does not distinguish
+    a first name from a last one — "Arnaud Marchand" gives `arnaud`/`marchand`, "Cher" gives
+    `cher`/"".
+
+    `email` is the **verified** address, the only one an account may be matched on or filed under.
+    `public_email` is the address the person chose to publish, which may be unverified: it is
+    reported to the caller so a refusal can say what to look for, never used as a key.
+
+    There is **no phone number**: GitHub has no such field, on the profile or in the API. A caller
+    that needs one has to ask the person.
+    """
     headers = {"Authorization": "Bearer " + str(access_token),
                "Accept": "application/vnd.github+json"}
     try:
         user = session.get(GITHUB_USER, headers=headers, timeout=TIMEOUT)
         if user.status_code != 200:
             raise GithubError("unable to read the GitHub profile")
-        login = (user.json() or {}).get("login") or ""
+        payload = user.json() or {}
+        login = payload.get("login") or ""
     except GithubError:
         raise
     except Exception as error:
@@ -91,16 +105,45 @@ def fetch_identity(session, access_token):
     if not login:
         raise GithubError("the GitHub profile carries no login")
 
-    email = ""
+    firstname, lastname = split_name(payload.get("name"))
+    profile = {
+        "login": login,
+        "name": (payload.get("name") or "").strip(),
+        "firstname": firstname,
+        "lastname": lastname,
+        "email": "",
+        "public_email": (payload.get("email") or "").strip(),
+    }
+
     try:
         emails = session.get(GITHUB_EMAILS, headers=headers, timeout=TIMEOUT)
         if emails.status_code == 200:
-            email = pick_primary_email(emails.json())
+            profile["email"] = pick_primary_email(emails.json())
     except Exception:
         # The scope `user:email` is enough for this call, but a token issued by an older app
         # configuration may not carry it: the login is still usable, the account match is not.
         logger.warning("GitHub e-mails unreadable, matching on the login only", exc_info=True)
-    return login, email
+    return profile
+
+
+def fetch_identity(session, access_token):
+    """`(login, email)` for the token. The e-mail may be empty; the login may not.
+
+    Kept as the narrow contract for callers that only need to recognise the account; `fetch_profile`
+    carries the rest (name, published address) for the paths that file a new one.
+    """
+    profile = fetch_profile(session, access_token)
+    return profile["login"], profile["email"]
+
+
+def split_name(name):
+    """`("Arnaud", "Marchand")` for "Arnaud Marchand", `("Cher", "")` for one word, `("", "")` for none."""
+    words = [word for word in str(name or "").split() if word]
+    if not words:
+        return "", ""
+    if len(words) == 1:
+        return words[0], ""
+    return words[0], " ".join(words[1:])
 
 
 def pick_primary_email(entries):

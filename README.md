@@ -173,6 +173,15 @@ administrator clears `inactive` **and** grants the privileges, at which point th
 with GitHub without ever holding a password here. An identity that already has an account is
 untouched by the setting.
 
+What the filed document carries, and what GitHub cannot give:
+
+| Field | Source |
+|---|---|
+| `login` | the GitHub login, always present |
+| `firstname` / `lastname` | the profile's `name`, split on the last space — empty when the person never filled it, and `firstname` then falls back on the login |
+| `email` | only a **verified** address (`/user/emails`, `user:email` scope). An address the person typed but never confirmed is reported in the log and **not** stored: it is not a key anyone should trust |
+| `phone` | **nothing** — GitHub has no phone field, on the profile or in the API. An administrator fills it in when the person calls back |
+
 `GET /api/v1/cred/oauth/state` returns `{url}` — the GitHub authorize URL — and sets a one-time
 `nyx_oauth_state` cookie (HttpOnly, SameSite=Lax, 10 minutes). `POST /api/v1/cred/login_github`
 `{code, state}` exchanges the code, keeps only the identity (the GitHub token is used and dropped),
