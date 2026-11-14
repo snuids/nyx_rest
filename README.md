@@ -182,12 +182,62 @@ What the filed document carries, and what GitHub cannot give:
 | `email` | only a **verified** address (`/user/emails`, `user:email` scope). An address the person typed but never confirmed is reported in the log and **not** stored: it is not a key anyone should trust |
 | `phone` | **nothing** — GitHub has no phone field, on the profile or in the API. An administrator fills it in when the person calls back |
 
-`GET /api/v1/cred/oauth/state` returns `{url}` — the GitHub authorize URL — and sets a one-time
-`nyx_oauth_state` cookie (HttpOnly, SameSite=Lax, 10 minutes). `POST /api/v1/cred/login_github`
-`{code, state}` exchanges the code, keeps only the identity (the GitHub token is used and dropped),
-finds the account by its verified e-mail and then by `login.keyword`, and finishes the session with
-the same `finalize_login` as a password login. `/api/v1/config` carries `login.github`, so the
-console shows the button only when the three settings are present.
+`GET /api/v1/cred/oauth/state` returns `{url, provider}` — the GitHub authorize URL — and sets a
+one-time `nyx_oauth_state` cookie (HttpOnly, SameSite=Lax, 10 minutes). `POST
+/api/v1/cred/login_github` `{code, state}` exchanges the code, keeps only the identity (the GitHub
+token is used and dropped), finds the account by its verified e-mail and then by `login.keyword`,
+and finishes the session with the same `finalize_login` as a password login. `/api/v1/config`
+carries `login.github`, so the console shows the button only when the three settings are present.
+
+## Microsoft Entra ID sign-in
+
+Same story, other directory: an account that already exists can sign in with its Microsoft identity
+instead of a password. The Microsoft side is an **application registration** in one directory
+(Entra ID → *App registrations* → *New registration*), and four settings turn the button on:
+
+```shell
+ENTRA_TENANT_ID=00000000-0000-0000-0000-000000000000   # Directory (tenant) ID — a GUID, not contoso.com
+ENTRA_CLIENT_ID=...        # Application (client) ID
+ENTRA_CLIENT_SECRET=...    # its secret — never reaches the browser
+ENTRA_REDIRECT_URI=https://HOST/oauth   # the console's page, the same value GitHub uses
+```
+
+What the registration must say:
+
+| Setting | Value | Why |
+|---|---|---|
+| Supported account types | *Accounts in this organizational directory only* | one tenant: the only directory whose identities can be accepted |
+| Redirect URI platform | **Web** | the code is exchanged server-side with the secret; a *Single page application* registration has no secret and the exchange is refused (`AADSTS9002327`) |
+| API permissions | Microsoft Graph **delegated**: `openid`, `profile`, `email` | the identity is read from the ID token; no Graph call is made, so `User.Read` is not asked for |
+| Certificates & secrets | a client secret | **it expires** (24 months at most). Rotating it is an operational task: an expired secret answers `invalid_client` and every Entra sign-in is refused |
+
+What the sign-in checks, and why each check is there:
+
+- `ENTRA_TENANT_ID` must be the **directory id**. Every claim is compared against it, and a domain
+  name is read as "not configured": `/config` answers `login.entra: false`, no button appears, and
+  `?provider=entra` answers `entra login not configured` instead of half-working.
+- The identity token must be issued for this application (`aud`), by this directory (`tid`, with an
+  `iss` that repeats it), inside its validity window, and answer the `nonce` this browser was given.
+  Without the `tid` check any Entra tenant could present a user holding one of our addresses.
+- Its **signature is not verified**, and does not need to be: the token is read from the token
+  endpoint's own answer, over the TLS connection this confidential client opened — the server
+  validation OIDC Core accepts in place of a signature check for that case (OpenID Connect Core
+  §3.1.3.7). Nothing is ever read from an `id_token` a browser sends.
+- The account is matched on an address the directory vouches for: the `email` claim, or
+  `preferred_username` (the sign-in name) when the directory sets none. No short name is derived and
+  tried — that would match an account on something its holder never proved.
+- `ENTRA_UNKNOWN_ACCOUNTS` reads exactly like `GITHUB_UNKNOWN_ACCOUNTS` above; a filed account
+  carries `source: "entra"`, the address as its `_id` and the local part of the sign-in name as its
+  `login`. Entra has no phone number in the token either.
+
+`GET /api/v1/cred/oauth/state?provider=entra` returns the Microsoft URL and the state cookie;
+`POST /api/v1/cred/login_sso` `{code, state}` finishes **either** sign-in — the state record says
+which provider issued it, so the console has one return page and cannot choose the provider.
+`POST /api/v1/cred/login_entra` does the same for callers that name it, and `/cred/login_github` is
+unchanged.
+
+Microsoft validates the password, the MFA and the conditional access: NYX never sees a Microsoft
+credential, and the `doublePhase` SMS of the password route does not apply to this sign-in.
 
 ## Probes and metrics
 

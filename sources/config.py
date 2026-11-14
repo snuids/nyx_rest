@@ -118,6 +118,19 @@ class Settings(BaseSettings):
     # value is read as `refuse`: a typo must not open a door.
     GITHUB_UNKNOWN_ACCOUNTS: str = "refuse"
 
+    # Microsoft Entra ID sign-in (OIDC, one directory). `ENTRA_TENANT_ID` is the **directory id**
+    # (the GUID the portal shows as "Directory (tenant) ID"), not the domain name: every claim of
+    # the identity token is checked against it, and a name would leave that check with nothing to
+    # compare. A value that is not a GUID is read as "not configured", so the button stays hidden.
+    # The redirect URI is registered on the application as a **Web** platform — the code is
+    # exchanged server-side, which needs the client secret.
+    ENTRA_TENANT_ID: str = ""
+    ENTRA_CLIENT_ID: str = ""
+    ENTRA_CLIENT_SECRET: str = ""
+    ENTRA_REDIRECT_URI: str = ""
+    # Same meaning as `GITHUB_UNKNOWN_ACCOUNTS`, for identities that arrive from Entra.
+    ENTRA_UNKNOWN_ACCOUNTS: str = "refuse"
+
     # Kept for the (now removed) GitHub token exchange and for any JWT a client may ask for; the
     # sign-in itself mints a session token, not a JWT.
     OAUTH_CLIENT_SECRET: str = ""

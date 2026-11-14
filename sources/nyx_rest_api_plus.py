@@ -161,6 +161,39 @@ v3.22.36 13/Nov/2026 A cut session says why, to every call in flight
   authenticated session and an identifier of their own; the caller sends an id and parameter values.
   `/sendmessage` stays closed to non-administrators, and a `reporteditor` account can finally generate
   a report instead of receiving `403 destination not allowed` with nothing on screen.
+
+v3.22.37 14/Nov/2026 A Microsoft Entra ID identity signs in the way a GitHub one does
+  `GET /cred/oauth/state` now answers `?provider=entra` (GitHub stays the default, and answers what
+  it answered before), and `POST /cred/login_sso` finishes whichever sign-in the state was issued
+  for — the provider travels in the Redis record, so the console has one return page and cannot
+  choose the provider itself. `POST /cred/login_entra` names it for callers that prefer to, and
+  `POST /cred/login_github` keeps working unchanged.
+
+  `lib/entra_oauth.py` holds the exchange and nothing else. The identity token is read from the
+  token endpoint's own answer and checked before anything is believed: `aud` is our client id, `tid`
+  is `ENTRA_TENANT_ID`, `iss` repeats that directory, `exp`/`nbf` are current, and `nonce` is the one
+  this browser was given. `ENTRA_TENANT_ID` is the **directory id**, a GUID — a domain name is read
+  as "not configured", so the console shows no button instead of a sign-in that would fail after the
+  fact. The signature is not verified because it does not need to be: the token arrives on the TLS
+  connection this confidential client opened to the tenant's token endpoint, which is the server
+  validation OIDC Core accepts in place of a signature check for that case (§3.1.3.7) — nothing is
+  ever read from an `id_token` a browser sends. Neither the access token nor the ID token is stored:
+  the session token is minted by `finalize_login`, as for every other sign-in, which is also where
+  `ACCOUNT_INACTIVE` still comes from — a fourth provider added no second copy of that rule.
+
+  An Entra identity is matched on the address the directory vouches for: the `email` claim, or
+  `preferred_username` (the sign-in name) when the directory sets none. No short name is derived and
+  tried — that would land an identity on an account whose address it does not hold. `inactive` is
+  accepted there too (`ENTRA_UNKNOWN_ACCOUNTS`), and the account it files is disabled, carries no
+  privileges, `source: "entra"`, the address as its document id and the sign-in name's local part as
+  its `login`; `/config` gains `login.entra`, which the same test as the route decides. Four
+  settings, and the redirect URI is registered as a **Web** platform: the code is exchanged
+  server-side with the client secret, which a "Single page application" registration does not have.
+
+  `tests/test_entra_oauth.py` (55 cases: the module against a fake session and hand-built tokens, the
+  routes through the real application) pins the refusals — another directory, another application,
+  an expired token, a replayed nonce, a state posted to the other provider's callback — and the two
+  sign-ins that must keep working, GitHub's included. **626 tests**.
 """
 
 import json

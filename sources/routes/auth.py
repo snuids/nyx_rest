@@ -31,6 +31,7 @@ from auth.double_phase import verify_double_code
 from auth.role_mapper import extract_roles_from_ad
 import login_guard as guard
 from lib import github_oauth
+from lib import entra_oauth
 from lib import account_state
 from lib.account_state import is_inactive
 from es_read import find_user_by_login, fetch_document
@@ -66,6 +67,7 @@ def record_auth_failure(login, ip, reason, user_agent=""):
 
 
 OAUTH_STATE_TTL = 600        # ten minutes between the redirect and the callback
+PROVIDERS = ("github", "entra")   # the identity providers a sign-in may name
 
 
 def github_configured():
@@ -74,14 +76,30 @@ def github_configured():
                 and settings.GITHUB_REDIRECT_URI)
 
 
-def find_account(es, login, email):
-    """The `nyx_user` document behind a GitHub identity, or `None`.
+def entra_configured():
+    """True when the four settings the Entra sign-in needs are present.
+
+    The tenant has to be the directory id (a GUID): a domain name would show the button, send the
+    person to Microsoft, and then fail the `tid` comparison — a sign-in that looks broken.
+    """
+    return entra_oauth.configured(settings.ENTRA_TENANT_ID, settings.ENTRA_CLIENT_ID,
+                                  settings.ENTRA_CLIENT_SECRET, settings.ENTRA_REDIRECT_URI)
+
+
+def provider_configured(provider):
+    """True when this instance can run the sign-in of `provider`."""
+    return entra_configured() if provider == "entra" else github_configured()
+
+
+def find_account(es, candidates):
+    """The `nyx_user` document behind an identity, or `None`.
 
     The same pair of lookups as the password route: by document id first, then by
     `login.keyword` — eight accounts are indexed under their e-mail while their `login` field holds
-    a short name. GitHub is not asked twice for the same answer.
+    a short name. The candidates come from the provider's module, most specific first; the provider
+    is not asked twice for the same answer.
     """
-    for candidate in github_oauth.candidates(login, email):
+    for candidate in candidates:
         try:
             return es.get(index="nyx_user", id=candidate)
         except Exception:
@@ -92,27 +110,29 @@ def find_account(es, login, email):
     return None
 
 
-def github_unknown_account_policy():
-    """`refuse` (default) or `inactive`.
+def unknown_account_policy(provider):
+    """`refuse` (default) or `inactive`, per provider.
 
     Anything else is read as `refuse`: a misspelt value must not open a door, and `refuse` is what
     the platform did before the setting existed.
     """
-    return str(getattr(settings, "GITHUB_UNKNOWN_ACCOUNTS", "refuse") or "").strip().lower()
+    name = "ENTRA_UNKNOWN_ACCOUNTS" if provider == "entra" else "GITHUB_UNKNOWN_ACCOUNTS"
+    return str(getattr(settings, name, "refuse") or "").strip().lower()
 
 
-def provision_inactive_account(es, profile):
-    """Files a disabled, privilege-less `nyx_user` for a GitHub identity nobody knows.
+
+def provision_inactive_account(es, profile, source="github"):
+    """Files a disabled, privilege-less `nyx_user` for an identity nobody knows.
 
     The account cannot sign in — `finalize_login` refuses it, so the caller ends up answering
     `ACCOUNT_INACTIVE` — which means creating it grants nothing. It exists so an administrator sees
     the request in the users list: activate it, grant the privileges, and the person then signs in
-    with GitHub without ever holding a password on this platform.
+    with GitHub or Entra ID without ever holding a password on this platform.
 
-    The document keeps the shape the console expects: `_id` is the address when GitHub gives a
-    verified one, `login` the short name. The name comes from the profile, and falls back on the
-    login when the person never filled it; the phone is left out because GitHub has no such field —
-    an administrator completes it when they call back.
+    The document keeps the shape the console expects: `_id` is the address the provider vouches for,
+    `login` the short name. The name comes from the profile and falls back on `login` when the
+    person never filled it; no phone number is written, because neither provider carries one — an
+    administrator completes it when they call back.
     """
     login = profile.get("login") or ""
     email = profile.get("email") or ""
@@ -125,7 +145,7 @@ def provision_inactive_account(es, profile):
         "filters": [],
         "language": "en",
         "inactive": True,
-        "source": "github",
+        "source": source,
         "created": datetime.now(timezone.utc).isoformat(),
     }
     document_id = email or login
@@ -229,6 +249,149 @@ def finalize_login(usr, data, es, conn):
     return resp
 
 
+def oauth_state_record(stored):
+    """The record kept for a `state`, read leniently.
+
+    `{"provider": …, "nonce": …}` since Entra ID joined; a state issued before that is the string
+    `"1"`, and means GitHub. An unreadable value is read the same way rather than refused here: the
+    cookie comparison already happened, and a sign-in that cannot say which provider issued it still
+    has one that worked before Entra existed.
+    """
+    record = {}
+    try:
+        parsed = json.loads(stored)
+        if isinstance(parsed, dict):
+            record = parsed
+    except (TypeError, ValueError):
+        record = {}
+    if record.get("provider") not in PROVIDERS:
+        record["provider"] = "github"
+    return record
+
+
+def oauth_candidates(provider, profile):
+    """The `nyx_user` identifiers for the identity `provider` returned."""
+    if provider == "entra":
+        return entra_oauth.candidates(profile)
+    return github_oauth.candidates(profile.get("login") or "", profile.get("email") or "")
+
+
+def fetch_oauth_profile(provider, code, nonce=None):
+    """The identity behind `code`, or the provider's refusal as an exception.
+
+    Both providers end here with the same shape — `login`, `email`, and the name fields when known —
+    so what follows does not branch on the provider at all. The exchange is server-side, and the
+    token it mints stays inside the provider module: the session token is ours (`finalize_login`).
+    """
+    with requests.Session() as session:
+        if provider == "entra":
+            return entra_oauth.exchange_code(
+                session, settings.ENTRA_TENANT_ID, settings.ENTRA_CLIENT_ID,
+                settings.ENTRA_CLIENT_SECRET, code, settings.ENTRA_REDIRECT_URI, nonce=nonce,
+            )
+        token = github_oauth.exchange_code(
+            session, settings.GITHUB_CLIENT_ID, settings.GITHUB_CLIENT_SECRET,
+            code, settings.GITHUB_REDIRECT_URI,
+        )
+        return github_oauth.fetch_profile(session, token)
+
+
+def complete_oauth_sign_in(provider=None):
+    """Finish a sign-in through an identity provider: the state, the identity, the session.
+
+    Written once for every provider, because everything that can go wrong is the same for all of
+    them: a state that was never issued, one issued to another browser, a refused exchange, an
+    identity with no account, and an account that may not come in (`finalize_login`).
+
+    `provider` is the one the route names — `github`, `entra`. It is `None` on `/cred/login_sso`,
+    the callback the console posts to: the state then says which provider issued it, so the return
+    page does not have to know, and cannot choose.
+    """
+    logger.info(">> LOGIN IN " + (provider or "SSO").upper())
+    try:
+        data = json.loads(request.data.decode("utf-8"))
+    except ValueError:
+        return {'error': 'Bad Request'}
+    if not isinstance(data, dict):
+        return {'error': 'Bad Request'}
+
+    code = data.get('code') or ''
+    provided = data.get('state') or ''
+    ip = guard.client_ip(request.headers, request.remote_addr)
+    agent = request.headers.get("User-Agent")
+
+    if not code or not provided:
+        return {'error': 'Bad Credentials'}
+
+    # One use, one browser: the state must be the one this browser was given.
+    try:
+        stored = state.redisserver.get("nyx_oauth_state_" + provided)
+        state.redisserver.delete("nyx_oauth_state_" + provided)
+    except Exception:
+        logger.error("Unable to verify the sign-in state", exc_info=True)
+        return {'error': 'unable to verify the sign-in'}
+    cookie = request.cookies.get('nyx_oauth_state', '')
+    if stored is None or not hmac.compare_digest(str(provided), str(cookie)):
+        record_auth_failure(provider or "sso", ip, "OAUTH_STATE", agent)
+        state.auth_failures_total += 1
+        guard.delay()
+        return {'error': 'Bad Credentials'}
+
+    record = oauth_state_record(stored)
+    issued = record["provider"]
+    if provider and issued != provider:
+        # A GitHub state posted to the Entra callback, or the reverse. The exchange would fail
+        # anyway; saying so in the audit is what makes it visible.
+        record_auth_failure(issued, ip, "OAUTH_PROVIDER", agent)
+        state.auth_failures_total += 1
+        guard.delay()
+        return {'error': 'Bad Credentials'}
+    provider = issued
+
+    if not provider_configured(provider):
+        logger.info("%s sign-in asked for but not configured", provider)
+        return {'error': 'Bad Credentials'}
+
+    try:
+        profile = fetch_oauth_profile(provider, code, record.get("nonce") or None)
+    except (github_oauth.GithubError, entra_oauth.EntraError, ValueError):
+        record_auth_failure(provider, ip, provider.upper() + "_EXCHANGE", agent)
+        state.auth_failures_total += 1
+        guard.delay()
+        return {'error': 'Bad Credentials'}
+
+    # The provider's token has done its work; it is not stored anywhere and never becomes the
+    # session token: the platform mints its own (finalize_login).
+    login, email = profile.get("login") or "", profile.get("email") or ""
+    usr = find_account(state.es, oauth_candidates(provider, profile))
+    if usr is None:
+        if unknown_account_policy(provider) == "inactive":
+            # An account is filed, disabled and without privileges: `finalize_login` refuses it,
+            # so nothing is granted — the administrator decides afterwards.
+            usr = provision_inactive_account(state.es, profile, source=provider)
+            logger.info("%s sign-in for %s (%s): disabled account created for %s %s, "
+                        "no privileges",
+                        provider, login, email or "no address",
+                        profile.get("firstname") or "-", profile.get("lastname") or "")
+            return finalize_login(usr, {'login': usr['_source']['login'],
+                                        'app': data.get('app', 'console')},
+                                  state.es, state.conn)
+        # Only an existing account signs in: the provider says who you are, `nyx_user` says what
+        # you may open, and an unknown account has no privileges to grant.
+        logger.warning("%s sign-in for %s (%s): no NYX account", provider, login,
+                       email or "no address")
+        record_auth_failure(login, ip, "NO_ACCOUNT_" + provider.upper(), agent)
+        state.auth_failures_total += 1
+        guard.delay()
+        return {'error': 'Bad Credentials'}
+
+    account = usr["_source"]
+    logger.info("%s sign-in: %s -> %s", provider, login, account.get("login"))
+    return finalize_login(usr, {'login': account.get('login', login),
+                                'app': data.get('app', 'console')},
+                          state.es, state.conn)
+
+
 def register(api, name_space):
 
     loginGoogleAPI = api.model('login_google_model', {
@@ -237,122 +400,87 @@ def register(api, name_space):
     })
 
     @name_space.route('/cred/oauth/state', methods=['GET'])
-    @api.doc(description="Start a GitHub sign-in: the URL to open, and the state cookie that goes "
-                         "with it.")
+    @api.doc(description="Start a sign-in through an identity provider: the URL to open, and the "
+                         "state cookie that goes with it. `?provider=entra` asks for Microsoft "
+                         "Entra ID; GitHub is the default and the old behaviour.")
     class loginOAuthState(Resource):
         def get(self):
-            """The browser is sent to GitHub with a one-time `state`, kept here for ten minutes.
+            """The browser is sent to the provider with a one-time `state`, kept here for ten minutes.
 
             The state is what stops the callback from being a login CSRF: an attacker who prepares
             a link with *their* code cannot know the value this browser was given, and the value is
             also written to an HttpOnly cookie, so a state obtained elsewhere does not work here.
+
+            The provider travels with the state, so one callback (`/cred/login_sso`) can finish
+            either sign-in without the browser having to say which one it started — and without
+            being able to say. Entra ID also gets a `nonce`, which its identity token must answer:
+            GitHub has no OIDC token to replay, Entra has one.
             """
-            if not github_configured():
-                logger.info("GitHub sign-in asked for but not configured")
-                return {'error': 'github login not configured'}
+            provider = (request.args.get('provider') or 'github').strip().lower()
+            if provider not in PROVIDERS:
+                return {'error': 'unknown sign-in provider'}
+            if not provider_configured(provider):
+                logger.info("%s sign-in asked for but not configured", provider)
+                return {'error': provider + ' login not configured'}
 
             oauth_state = secrets.token_urlsafe(24)
+            record = {"provider": provider}
+            if provider == "entra":
+                record["nonce"] = secrets.token_urlsafe(24)
             try:
-                state.redisserver.set("nyx_oauth_state_" + oauth_state, "1", OAUTH_STATE_TTL)
+                state.redisserver.set("nyx_oauth_state_" + oauth_state, json.dumps(record),
+                                      OAUTH_STATE_TTL)
             except Exception:
-                logger.error("Unable to store the GitHub sign-in state", exc_info=True)
+                logger.error("Unable to store the %s sign-in state", provider, exc_info=True)
                 return {'error': 'unable to start the sign-in'}
 
             try:
-                url = github_oauth.authorize_url(settings.GITHUB_CLIENT_ID,
-                                                 settings.GITHUB_REDIRECT_URI, oauth_state)
+                if provider == "entra":
+                    url = entra_oauth.authorize_url(settings.ENTRA_TENANT_ID,
+                                                    settings.ENTRA_CLIENT_ID,
+                                                    settings.ENTRA_REDIRECT_URI,
+                                                    oauth_state, record["nonce"])
+                else:
+                    url = github_oauth.authorize_url(settings.GITHUB_CLIENT_ID,
+                                                     settings.GITHUB_REDIRECT_URI, oauth_state)
             except ValueError:
-                return {'error': 'github login not configured'}
+                return {'error': provider + ' login not configured'}
 
-            response = make_response(jsonify({'error': '', 'url': url}))
+            response = make_response(jsonify({'error': '', 'url': url, 'provider': provider}))
             response.set_cookie('nyx_oauth_state', oauth_state, max_age=OAUTH_STATE_TTL,
                                 secure=state.COOKIESECURE, httponly=True, samesite='Lax')
             return response
 
-    githubLoginAPI = api.model('github_login_model', {
-        'code': fields.String(description="The code GitHub put on the redirect.", required=True),
+    oauthLoginAPI = api.model('oauth_login_model', {
+        'code': fields.String(description="The code the provider put on the redirect.",
+                              required=True),
         'state': fields.String(description="The state returned with it.", required=True),
         'app': fields.String(description="The app tag.", required=False),
     })
 
+    @name_space.route('/cred/login_sso', methods=['POST'])
+    @api.doc(description="Finish a sign-in started at `/cred/oauth/state`. The state says which "
+                         "provider issued it, so the console has one return page for all of them.")
+    @api.expect(oauthLoginAPI)
+    class loginSsoRest(Resource):
+        def post(self):
+            return complete_oauth_sign_in()
+
     @name_space.route('/cred/login_github', methods=['POST'])
-    @api.doc(description="Sign in with GitHub. Only an existing account may sign in.")
-    @api.expect(githubLoginAPI)
+    @api.doc(description="Sign in with GitHub. Only an existing account may sign in, unless "
+                         "GITHUB_UNKNOWN_ACCOUNTS files a disabled one.")
+    @api.expect(oauthLoginAPI)
     class loginGithubRest(Resource):
         def post(self):
-            logger.info(">> LOGIN IN GITHUB")
-            try:
-                data = json.loads(request.data.decode("utf-8"))
-            except ValueError:
-                return {'error': 'Bad Request'}
-            if not isinstance(data, dict):
-                return {'error': 'Bad Request'}
+            return complete_oauth_sign_in("github")
 
-            code = data.get('code') or ''
-            provided = data.get('state') or ''
-            ip = guard.client_ip(request.headers, request.remote_addr)
-            agent = request.headers.get("User-Agent")
-
-            if not code or not provided or not github_configured():
-                return {'error': 'Bad Credentials'}
-
-            # One use, one browser: the state must be the one this browser was given.
-            try:
-                stored = state.redisserver.get("nyx_oauth_state_" + provided)
-                state.redisserver.delete("nyx_oauth_state_" + provided)
-            except Exception:
-                logger.error("Unable to verify the GitHub sign-in state", exc_info=True)
-                return {'error': 'unable to verify the sign-in'}
-            cookie = request.cookies.get('nyx_oauth_state', '')
-            if stored is None or not hmac.compare_digest(str(provided), str(cookie)):
-                record_auth_failure("github", ip, "OAUTH_STATE", agent)
-                state.auth_failures_total += 1
-                guard.delay()
-                return {'error': 'Bad Credentials'}
-
-            try:
-                with requests.Session() as session:
-                    token = github_oauth.exchange_code(
-                        session, settings.GITHUB_CLIENT_ID, settings.GITHUB_CLIENT_SECRET,
-                        code, settings.GITHUB_REDIRECT_URI,
-                    )
-                    profile = github_oauth.fetch_profile(session, token)
-                    login, email = profile["login"], profile["email"]
-            except github_oauth.GithubError:
-                record_auth_failure("github", ip, "GITHUB_EXCHANGE", agent)
-                state.auth_failures_total += 1
-                guard.delay()
-                return {'error': 'Bad Credentials'}
-
-            # The token has done its work; it is not stored anywhere and never becomes the session
-            # token: the platform mints its own (finalize_login).
-            usr = find_account(state.es, login, email)
-            if usr is None:
-                if github_unknown_account_policy() == "inactive":
-                    # An account is filed, disabled and without privileges: `finalize_login` refuses
-                    # it, so nothing is granted — the administrator decides afterwards.
-                    usr = provision_inactive_account(state.es, profile)
-                    logger.info("GitHub sign-in for %s (%s): disabled account created for %s %s, "
-                                "no privileges; published e-mail %s",
-                                login, email or "no verified e-mail",
-                                profile.get("firstname") or "-", profile.get("lastname") or "",
-                                profile.get("public_email") or "none")
-                    return finalize_login(usr, {'login': usr['_source']['login'],
-                                                'app': data.get('app', 'console')},
-                                          state.es, state.conn)
-                # Only an existing account signs in: GitHub says who you are, `nyx_user` says what
-                # you may open, and an unknown account has no privileges to grant.
-                logger.warning("GitHub sign-in for %s (%s): no NYX account", login, email or "no e-mail")
-                record_auth_failure(login, ip, "NO_ACCOUNT_GITHUB", agent)
-                state.auth_failures_total += 1
-                guard.delay()
-                return {'error': 'Bad Credentials'}
-
-            account = usr["_source"]
-            logger.info("GitHub sign-in: %s -> %s", login, account.get("login"))
-            return finalize_login(usr, {'login': account.get('login', login),
-                                        'app': data.get('app', 'console')},
-                                  state.es, state.conn)
+    @name_space.route('/cred/login_entra', methods=['POST'])
+    @api.doc(description="Sign in with Microsoft Entra ID. Only an existing account may sign in, "
+                         "unless ENTRA_UNKNOWN_ACCOUNTS files a disabled one.")
+    @api.expect(oauthLoginAPI)
+    class loginEntraRest(Resource):
+        def post(self):
+            return complete_oauth_sign_in("entra")
 
     @name_space.route('/cred/login_google', methods=['POST'])
     class loginGoogleRest(Resource):
