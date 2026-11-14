@@ -61,6 +61,19 @@ class LoginTests(RouteTestCase):
         code, body, _ = self._login("inconnu@example.com", "mauvais")
         self.assertEqual(body["error"], "Bad Credentials")
 
+    def test_an_account_without_a_password_is_refused_not_crashed(self):
+        # An account filed by a sign-in through GitHub or Entra ID carries no `password` field at
+        # all: it can only come in through that provider. Indexing the field raised KeyError, which
+        # the route answered with a 500 — on the only unauthenticated entry point of the platform.
+        self.es.docs["nyx_user"] = {"microsoft@snuids.ovh": {
+            "login": "microsoft", "privileges": ["admin"], "language": "en", "filters": [],
+            "source": "entra",
+        }}
+        code, body, _ = self._login("microsoft", "nimporte-quoi")
+        self.assertEqual(code, 200, "un compte sans mot de passe doit etre refuse, pas planter")
+        self.assertEqual(body["error"], "Bad Credentials")
+        self.assertEqual(self.state.auth_failures_total, 1)
+
     def test_a_failed_login_is_counted_per_account_and_per_ip(self):
         self._login("alice@example.com", "mauvais")
         self.assertEqual(int(self.redis.get("loginfail:user:alice@example.com")), 1)
@@ -210,6 +223,21 @@ class BridedPasswordChangeTests(RouteTestCase):
                                   body={"login": "alice@example.com",
                                         "password": "Nouveau#Pass2026"})
         self.assertEqual(body["error"], "")
+
+    def test_a_password_less_account_cannot_change_a_password_it_does_not_have(self):
+        # Same defect as the login route, one step further: an account filed by a provider holds no
+        # password, so there is nothing to compare the "current" one with. The answer is the one a
+        # wrong password gets, not a KeyError.
+        self.es.docs["nyx_user"]["microsoft@snuids.ovh"] = {
+            "login": "microsoft", "privileges": ["admin"], "language": "en", "filters": [],
+            "source": "entra",
+        }
+        token = self.login_as("microsoft@snuids.ovh", ["admin"])
+        code, body, _ = self.call("post", "/api/v1/cred/changepassword", token,
+                                  {"old_password": "peu-importe", "new_password": "Nouveau#Pass2026"})
+        self.assertEqual(code, 200)
+        self.assertEqual(body["error"], "wrongpassword")
+        self.assertNotIn("password", self.es.docs["nyx_user"]["microsoft@snuids.ovh"])
 
     def test_a_wrong_current_password_changes_nothing(self):
         before = self.es.docs["nyx_user"]["alice@example.com"]["password"]

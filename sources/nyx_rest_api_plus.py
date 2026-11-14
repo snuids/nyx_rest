@@ -194,6 +194,20 @@ v3.22.37 14/Nov/2026 A Microsoft Entra ID identity signs in the way a GitHub one
   routes through the real application) pins the refusals — another directory, another application,
   an expired token, a replayed nonce, a state posted to the other provider's callback — and the two
   sign-ins that must keep working, GitHub's included. **626 tests**.
+
+v3.22.38 14/Nov/2026 An account without a password is refused, not a 500
+  An account filed by a sign-in through GitHub or Entra ID (`*_UNKNOWN_ACCOUNTS=inactive`) carries
+  **no** `password` field: it can only come in through that provider. `/cred/login` indexed the field
+  directly, so trying a password on such an account raised `KeyError` and the only unauthenticated
+  route of the platform answered **500 Internal Server Error** — reported as "what is the password of
+  the stub user?", which is the right question: there is none. The hash is now read defensively
+  (`or ""`), a missing one is simply not verified, and the route falls through to the same refusal
+  every other wrong credential gets. `/cred/changepassword` had the same read and answered a 500 to a
+  session that tried to change a password it does not have; it now answers `wrongpassword`.
+
+  Two cases in `tests/test_routes_auth.py`: a login on a password-less account answers 200 with
+  `Bad Credentials` and counts one failure, and a change of password on such an account answers
+  `wrongpassword` without writing anything. **628 tests**, coverage 82 %.
 """
 
 import json
