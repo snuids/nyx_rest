@@ -635,8 +635,13 @@ def register(api, name_space):
                 logger.info("USR_" * 20)
                 logger.info((usr or {}).get("_source", {}).get("login", "unknown"))
 
-                if usr is not None and pbkdf2_sha256.verify(
-                        data["password"], usr["_source"]["password"]):
+                # An account filed by a sign-in through an identity provider (GitHub, Entra ID)
+                # carries **no** `password` field: it can only come in through that provider. Read
+                # defensively — indexing the field raised KeyError, which is a 500 on a public
+                # route instead of the refusal every other wrong credential gets.
+                stored = (usr or {}).get("_source", {}).get("password") or ""
+                if usr is not None and stored and pbkdf2_sha256.verify(
+                        data["password"], stored):
 
                     guard.reset(state.redisserver, cleanlogin, ip)
 
@@ -839,7 +844,10 @@ def register(api, name_space):
             policy_error = check_new_password(req["new_password"], user.get("login", ""))
             if policy_error:
                 return {"error": policy_error}
-            if pbkdf2_sha256.verify(req["old_password"], usrdb["_source"]["password"]):
+            # A password-less account (filed by a sign-in through an identity provider) has nothing
+            # to compare: the answer is the one a wrong password gets, not a KeyError.
+            stored = usrdb["_source"].get("password") or ""
+            if stored and pbkdf2_sha256.verify(req["old_password"], stored):
                 usrdb["_source"]["password"] = pbkdf2_sha256.hash(req["new_password"])
                 usrdb["_source"]["mustResetPassword"] = False
                 res = state.es.index(index="nyx_user", body=usrdb["_source"], id=docid)
