@@ -25,6 +25,10 @@ from es_helpers import (
 )
 from es_read import fetch_document, find_user_by_login, is_not_found
 from lib import account_state
+from lib.concurrency import (
+    WILDCARD, BadPrecondition, conflict_body, etag_for, is_conflict, parse_precondition,
+    write_condition,
+)
 from common import loadData, get_mappings, kibanaData
 from pg_common import loadPGData, getAppByID, get_sql_server_connection
 from helpers.sql_queries import build_crud_query
@@ -504,6 +508,7 @@ def register(app, api, name_space):
         from es_helpers import send_event
 
         data = None
+        indexed = None
         met = request.method.lower()
         logger.info("Generic Index=" + index + " Object:" + object + " Method:" + met)
 
@@ -521,6 +526,21 @@ def register(app, api, name_space):
             logger.info("protected index: write refused for a non-admin account")
             return {'error': "Not Allowed"}
 
+        # A write may assert the version it read: `If-Match: "12-1"` (what the console and
+        # any HTTP client send) or `?seq_no=12&primary_term=1`. An unusable value is refused
+        # rather than ignored — a check silently turned off is worse than no check.
+        precondition = (None, None)
+        if met in ("post", "delete"):
+            try:
+                precondition = parse_precondition(
+                    request.headers.get("If-Match"),
+                    request.args.get("seq_no"),
+                    request.args.get("primary_term"),
+                )
+            except BadPrecondition as exc:
+                logger.info("generic: unusable If-Match refused (" + str(exc) + ")")
+                return {'error': "bad If-Match"}, 400
+
         if met == 'get':
             # `can_use_indice` only sees an index name: it cannot tell *which* document is
             # requested. Reading by identifier therefore has its own check, otherwise
@@ -529,9 +549,31 @@ def register(app, api, name_space):
                 logger.info("nyx_user: reading another account refused")
                 return {'error': "Not Allowed", "data": None}
             error, ret = fetch_document(state.es, index, object)
-            return {'error': error, "data": ret}
+            # The version of the document travels with it: that is what a writer sends
+            # back as `If-Match`, and without it every save stays last-write-wins. Served
+            # as an `ETag` as well, so an HTTP client can use it without knowing our field
+            # names.
+            response = {'error': error, "data": ret}
+            if not ret:
+                return response
+            seq_no = ret.get("_seq_no")
+            if seq_no is None:
+                return response
+            primary_term = ret.get("_primary_term", 1)
+            response["seq_no"] = seq_no
+            response["primary_term"] = primary_term
+            return response, 200, {"ETag": etag_for(seq_no, primary_term)}
 
         elif met == 'post':
+            # The version the caller read, when it asserts one. Unasserted, the write stays
+            # what it always was: last-write-wins. `If-Match: *` means the record must
+            # exist — the cluster has no such flag on an index call, so it is read first,
+            # which is not atomic; the versioned form below is.
+            if precondition[0] == WILDCARD:
+                if fetch_document(state.es, index, object)[1] is None:
+                    logger.info("generic: If-Match * on a missing record: " + index + "/" + object)
+                    return {'error': "not found"}, 412
+            conditional = write_condition(precondition)
             try:
                 data = request.data.decode("utf-8")
                 if index == "nyx_user":
@@ -575,22 +617,38 @@ def register(app, api, name_space):
                         dataobj["password"] = pbkdf2_sha256.hash(generate_temporary_password())
                         dataobj["mustResetPassword"] = True
                     data = json.dumps(dataobj)
-                state.es.index(index=index, body=data, id=object)
+                indexed = state.es.index(index=index, body=data, id=object, **conditional)
+
                 if index == "nyx_user":
                     # An administrator may have just disabled the account: the cached answer is
                     # dropped so the change takes effect on the next request, not in a minute.
                     account_state.forget(object)
-            except:
+            except Exception as exc:
+                if is_conflict(exc):
+                    # Someone saved between the read and this write: nothing was indexed, and
+                    # the caller gets the document that won instead of an unexplained success.
+                    logger.info("generic: stale write refused on " + index + "/" + object)
+                    body, tag = conflict_body(state.es, index, object)
+                    return (body, 409, {"ETag": tag}) if tag else (body, 409)
                 logger.error("unable to post data", exc_info=True)
                 return {'error': "unable to post data"}
 
         elif met == 'delete':
+            if precondition[0] == WILDCARD:
+                if fetch_document(state.es, index, object)[1] is None:
+                    logger.info("generic: If-Match * on a missing record: " + index + "/" + object)
+                    return {'error': "not found"}, 412
+            conditional = write_condition(precondition)
             try:
-                ret = state.es.delete(index=index, id=object)
+                ret = state.es.delete(index=index, id=object, **conditional)
                 logger.info(ret)
                 if index == "nyx_user":
                     account_state.forget(object)
-            except:
+            except Exception as exc:
+                if is_conflict(exc):
+                    logger.info("generic: stale delete refused on " + index + "/" + object)
+                    body, tag = conflict_body(state.es, index, object)
+                    return (body, 409, {"ETag": tag}) if tag else (body, 409)
                 return {'error': "unable to delete data"}
 
         send_event(
@@ -598,4 +656,13 @@ def register(app, api, name_space):
             doc_type=request.args.get("doc_type", "doc"), obj=data,
         )
 
-        return {'error': ""}
+        # The write returns the version it produced. Without it, a screen that saves twice —
+        # an inline cell edit, a dialog left open — would assert the version it read the first
+        # time and get a 409 on its own second save.
+        response = {'error': ""}
+        if isinstance(indexed, dict) and indexed.get("_seq_no") is not None:
+            response["seq_no"] = indexed["_seq_no"]
+            response["primary_term"] = indexed.get("_primary_term", 1)
+            response["ETag"] = etag_for(response["seq_no"], response["primary_term"])
+            return response, 200, {"ETag": response["ETag"]}
+        return response
