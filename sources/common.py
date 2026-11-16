@@ -146,6 +146,11 @@ def loadData(es,conn,index,data,doc_type,download,cui,is_rest_api,user,outputfor
 
     if extra !=None:
         del data["extra"]
+
+    # The console's row editor saves with `If-Match`, so the version of each document has to
+    # come back with the hit — and a search only returns `_seq_no`/`_primary_term` when it is
+    # asked for them. Without this the editor would post unasserted and stay last-write-wins.
+    data["seq_no_primary_term"] = True
     
     if "size" in data:
         maxsize=data["size"]

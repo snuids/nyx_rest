@@ -48,6 +48,11 @@ class NotFound(Exception):
     status_code = 404
 
 
+class ConflictError(Exception):
+    """Like opensearchpy: a failed precondition (`if_seq_no` no longer matches), not an outage."""
+    status_code = 409
+
+
 class FakeES:
     """Double of the Elasticsearch client, index by name, calls logged.
 
@@ -71,6 +76,11 @@ class FakeES:
         self.written = []
         self.deleted = []
         self.searches = []
+        # (index, id) -> current `_seq_no`, incremented by each write. A pre-existing
+        # fixture starts at 0, as the first operation in a shard does, and `delete` with
+        # `if_seq_no` compares against it. `primary_term` stays 1: only a shard recovery
+        # moves it, and no test simulates one.
+        self.seq = {}
         # Set to an exception instance to make `get` fail the way a cluster error does —
         # distinct from the `NotFound` a missing document raises.
         self.get_error: "Optional[Exception]" = None
@@ -85,7 +95,8 @@ class FakeES:
             raise NotFound(f"{index}/{id}")
         # copy: a real client deserialises the JSON, so the calling code cannot modify our
         # fixtures (`finalize_login` sets the password field to empty on the document)
-        return {"_id": id, "_index": index, "_source": copy.deepcopy(source)}
+        return {"_id": id, "_index": index, "_source": copy.deepcopy(source),
+                "_seq_no": self.seq.get((index, id), 0), "_primary_term": 1}
 
     def _matching_indices(self, index):
         """`nyx_reporttask-*` matches every monthly index, as the real client does."""
@@ -150,13 +161,23 @@ class FakeES:
         return {"responses": []}
 
     # -- writing ---------------------------------------------------------
-    def index(self, index=None, body=None, id=None, **kwargs):
+    def index(self, index=None, body=None, id=None, if_seq_no=None, if_primary_term=None,
+              **kwargs):
         if "document" in kwargs:
             # The real client is opensearchpy: it wants `body=`, and `document=` raises. Some
             # callers try elasticsearch-py's spelling first inside a `try/except TypeError`
             # (`record_auth_failure`), so a fake that accepted both would silently swallow the
             # write and the test would assert on a document that was never sent.
             raise TypeError("index() got an unexpected keyword argument 'document'")
+        # Conditional write, as the cluster does it: a version that no longer matches is a
+        # 409 and nothing is written. The fake must refuse the same way, or a test would
+        # "prove" the guard while the document was overwritten anyway.
+        if if_seq_no is not None:
+            exists = id in (self.docs.get(index) or {})
+            current = self.seq.get((index, id), 0)
+            if (not exists or current != if_seq_no
+                    or (if_primary_term is not None and if_primary_term != 1)):
+                raise ConflictError(f"version conflict on {index}/{id}")
         parsed = body
         if isinstance(body, str):
             try:
@@ -167,7 +188,9 @@ class FakeES:
         # assert on the fields (hash, flag), not on the serialisation.
         self.written.append((index, id, parsed))
         self.docs.setdefault(index, {})[id] = copy.deepcopy(parsed)
-        return {"result": "created", "_id": id}
+        self.seq[(index, id)] = self.seq.get((index, id), 0) + 1
+        return {"result": "created", "_id": id,
+                "_seq_no": self.seq[(index, id)], "_primary_term": 1}
 
     def update(self, index=None, id=None, body=None, **kwargs):
         """Partial update, like the real client: `{"doc": {...}}` merges into the document.
@@ -190,7 +213,13 @@ class FakeES:
         self.docs[index][id] = merged
         return {"result": "updated", "_id": id}
 
-    def delete(self, index=None, id=None, **kwargs):
+    def delete(self, index=None, id=None, if_seq_no=None, if_primary_term=None, **kwargs):
+        if if_seq_no is not None:
+            exists = id in (self.docs.get(index) or {})
+            current = self.seq.get((index, id), 0)
+            if (not exists or current != if_seq_no
+                    or (if_primary_term is not None and if_primary_term != 1)):
+                raise ConflictError(f"version conflict on {index}/{id}")
         self.deleted.append((index, id))
         (self.docs.get(index) or {}).pop(id, None)
         return {"result": "deleted"}

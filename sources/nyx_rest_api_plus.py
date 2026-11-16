@@ -208,6 +208,29 @@ v3.22.38 14/Nov/2026 An account without a password is refused, not a 500
   Two cases in `tests/test_routes_auth.py`: a login on a password-less account answers 200 with
   `Bad Credentials` and counts one failure, and a change of password on such an account answers
   `wrongpassword` without writing anything. **628 tests**, coverage 82 %.
+
+v3.22.39 16/Nov/2026 Two operators no longer overwrite each other in silence
+  `POST /generic/<index>/<object>` indexed whatever the last browser had loaded: two people
+  editing the same record meant the second save erased the first one's work, with no error and no
+  trace. The write route now honours a precondition — `If-Match: "<seq_no>-<primary_term>"`, or
+  `?seq_no=`/`?primary_term=` for a client that cannot set a header — and forwards it to the cluster
+  as `if_seq_no`/`if_primary_term`: a stale version writes nothing and answers **409** with the
+  document that won, so the console can show both versions and let the operator decide. `*` means the
+  record must exist (a save must not resurrect a row someone deleted meanwhile) and answers 412
+  otherwise; an unreadable header is a 400, because a check silently turned into "no check" is the
+  defect this closes. `GET` serves the version (`ETag`, plus `seq_no`/`primary_term` in the body) and
+  `generic_search` now asks the cluster for `seq_no_primary_term`, so every row of a list carries the
+  numbers its editor sends back.
+  The header stays **optional**: the workers, the mobile clients and the integrations post unasserted
+  and keep the old last-write-wins behaviour, which is also what the console's other editors still
+  do. The PostgreSQL applications are not covered — their tables have no version column to compare.
+  `tests/test_concurrency.py` holds the parsing on its own (16 cases: the weak validator, the bare
+  sequence, the query fallback, everything that must be refused instead of ignored) and
+  `tests/test_routes_data.py` the wiring (15 cases: a stale write, the second of two dialogs, a
+  stale delete, the version a write returns, the hash stripped from a conflict body). The write
+  returns the version it produced, so a screen
+  that saves twice — an inline cell edit — does not get a 409 from the bump of its own first write.
+  **659 tests**, coverage 82 %.
 """
 
 import json

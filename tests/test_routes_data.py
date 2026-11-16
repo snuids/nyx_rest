@@ -199,5 +199,134 @@ class GenericSearchTests(RouteTestCase):
         self.assertEqual(body["error"], "Not Allowed")
 
 
+@unittest.skipUnless(data_routes is not None, "routes.data non importable")
+class GenericConflictTests(RouteTestCase):
+    """Optimistic concurrency: a write may assert the version it read.
+
+    Two operators on the same row used to overwrite each other in silence. The route now
+    forwards `if_seq_no`/`if_primary_term` to the cluster when the caller sends the version
+    it read, and answers 409 with the document that won when it no longer matches. The
+    header is optional — the workers and the integrations post without one — so the tests
+    below also pin the old behaviour.
+    """
+
+    route_modules = (data_routes,)
+    documents = {"nyx_user": USERS,
+                 "airport_alert-2026.11": {"1": {"site": "A", "flights": 2}}}
+
+    ROW = "/api/v1/generic/airport_alert-2026.11/1"
+
+    def setUp(self):
+        super().setUp()
+        self.alice = self.login_as("alice@example.com", ["YUL"])
+        self.admin = self.login_as("bob@example.com", ["admin"])
+
+    def test_a_write_without_a_version_still_goes_through(self):
+        # the historical contract: the workers, the mobile clients and the integrations post
+        # unasserted, and a mandatory header would have broken all of them at once
+        code, body, _ = self.call("post", self.ROW, self.alice, {"site": "B"})
+        self.assertEqual(body["error"], "")
+        self.assertEqual(self.es.written_on("airport_alert-2026.11")[0][1]["site"], "B")
+
+    def test_a_stale_version_is_refused_and_nothing_is_written(self):
+        code, body, _ = self.call("post", self.ROW, self.alice, {"site": "mine"},
+                                  headers={"If-Match": '"7-1"'})
+        self.assertEqual(code, 409)
+        self.assertEqual(body["error"], "conflict")
+        self.assertEqual(body["data"]["_source"]["site"], "A",
+                         "le appelant doit recevoir le document qui a gagne")
+        self.assertEqual(self.es.written, [], "aucune ecriture ne doit atteindre le cluster")
+        self.assertEqual(self.es.docs["airport_alert-2026.11"]["1"]["site"], "A")
+
+    def test_the_current_version_goes_through(self):
+        code, body, _ = self.call("post", self.ROW, self.alice, {"site": "B"},
+                                  headers={"If-Match": '"0-1"'})
+        self.assertEqual(code, 200)
+        self.assertEqual(body["error"], "")
+
+    def test_the_second_of_two_dialogs_is_refused(self):
+        # the double save: both editors loaded the same version, the first one wins
+        self.call("post", self.ROW, self.alice, {"site": "first"}, headers={"If-Match": '"0-1"'})
+        code, body, _ = self.call("post", self.ROW, self.alice, {"site": "second"},
+                                  headers={"If-Match": '"0-1"'})
+        self.assertEqual(code, 409)
+        self.assertEqual(self.es.docs["airport_alert-2026.11"]["1"]["site"], "first")
+
+    def test_the_get_hands_out_the_version(self):
+        code, body, response = self.call("get", self.ROW, self.alice)
+        self.assertEqual(body["seq_no"], 0)
+        self.assertEqual(body["primary_term"], 1)
+        self.assertEqual(response.headers.get("ETag"), '"0-1"',
+                         "un client HTTP qui ne connait pas nos champs doit pouvoir s'en servir")
+
+    def test_a_write_returns_the_version_it_produced(self):
+        code, body, response = self.call("post", self.ROW, self.alice, {"site": "B"},
+                                         headers={"If-Match": '"0-1"'})
+        self.assertEqual(body["seq_no"], 1)
+        self.assertEqual(response.headers.get("ETag"), '"1-1"')
+
+    def test_a_client_can_chain_its_own_saves(self):
+        # the inline cell editor saves twice from the same row: the second call must not be
+        # refused by the version bump the first one caused
+        code, body, _ = self.call("post", self.ROW, self.alice, {"site": "B"},
+                                  headers={"If-Match": '"0-1"'})
+        tag = '"%s-%s"' % (body["seq_no"], body["primary_term"])
+        code, body, _ = self.call("post", self.ROW, self.alice, {"site": "C"},
+                                  headers={"If-Match": tag})
+        self.assertEqual(body["error"], "")
+        self.assertEqual(self.es.docs["airport_alert-2026.11"]["1"]["site"], "C")
+
+    def test_a_bare_version_is_accepted(self):
+        # what a hand-written curl sends: the primary term defaults to 1
+        code, body, _ = self.call("post", self.ROW, self.alice, {"site": "B"},
+                                  headers={"If-Match": '"0"'})
+        self.assertEqual(body["error"], "")
+
+    def test_the_query_string_is_a_fallback_for_a_header_less_client(self):
+        code, body, _ = self.call("post", self.ROW + "?seq_no=0&primary_term=1",
+                                  self.alice, {"site": "B"})
+        self.assertEqual(body["error"], "")
+
+    def test_an_unreadable_precondition_is_refused_rather_than_ignored(self):
+        for bad in ('"abc"', '"1-2-3"', '"x-1"', '"-1"'):
+            code, body, _ = self.call("post", self.ROW, self.alice, {"site": "B"},
+                                      headers={"If-Match": bad})
+            self.assertEqual(code, 400, bad)
+            self.assertEqual(body["error"], "bad If-Match", bad)
+        self.assertEqual(self.es.written, [])
+
+    def test_must_exist_refuses_a_missing_record(self):
+        # a row deleted while the editor was open must not be recreated by its save
+        code, body, _ = self.call("post", "/api/v1/generic/airport_alert-2026.11/ghost",
+                                  self.alice, {"site": "B"}, headers={"If-Match": "*"})
+        self.assertEqual(code, 412)
+        self.assertEqual(self.es.written, [])
+
+    def test_must_exist_saves_an_existing_record(self):
+        code, body, _ = self.call("post", self.ROW, self.alice, {"site": "B"},
+                                  headers={"If-Match": "*"})
+        self.assertEqual(body["error"], "")
+
+    def test_a_stale_delete_is_refused(self):
+        code, body, _ = self.call("delete", self.ROW, self.alice, headers={"If-Match": '"5-1"'})
+        self.assertEqual(code, 409)
+        self.assertEqual(self.es.deleted, [])
+        self.assertIn("1", self.es.docs["airport_alert-2026.11"])
+
+    def test_a_current_delete_goes_through(self):
+        code, body, _ = self.call("delete", self.ROW, self.alice, headers={"If-Match": '"0-1"'})
+        self.assertEqual(body["error"], "")
+        self.assertEqual(self.es.deleted, [("airport_alert-2026.11", "1")])
+
+    def test_the_conflict_body_never_carries_a_password_hash(self):
+        # an error body ends up in a console, a ticket or a screenshot
+        code, body, _ = self.call("post", "/api/v1/generic/nyx_user/alice@example.com",
+                                  self.admin,
+                                  {"login": "alice@example.com", "privileges": ["admin"]},
+                                  headers={"If-Match": '"9-1"'})
+        self.assertEqual(code, 409)
+        self.assertNotIn("$pbkdf2", json.dumps(body))
+
+
 if __name__ == "__main__":
     unittest.main()
