@@ -85,10 +85,16 @@ class FakeConnection:
 
 
 class FakeAppES:
-    """`getAppByID` reads `nyx_app` once per (es, id): each test gets its own object."""
+    """`getAppByID` reads `nyx_app` once per (es, id): each test gets its own object.
 
-    def __init__(self, config=None, **extra):
-        source = {"config": dict(config or CONFIG)}
+    The application carries a `title` unless a test says otherwise: `title=None` leaves the field
+    out entirely, which is what an application created before titles existed looks like.
+    """
+
+    def __init__(self, config=None, title="Orders", **extra):
+        source: dict = {"config": dict(config or CONFIG)}
+        if title is not None:
+            source["title"] = title
         source.update(extra)
         self.document = {"_id": "app-1", "_source": source}
 
@@ -276,10 +282,31 @@ class ExportTests(PgDataTestCase):
             result = self.load(cursor, download=True, folder=folder + "/")
 
             self.assertEqual(result["type"], "direct")
-            self.assertTrue(result["url"].startswith("https://energy.example/generated/export_"))
+            self.assertTrue(result["url"].startswith("https://energy.example/generated/Orders_"),
+                            "the file is named after the application, not after a uuid")
             self.assertTrue(os.path.isfile(result["file"]))
             with open(result["file"], encoding="utf8") as handle:
                 self.assertIn("name", handle.readline())
+
+    def test_the_export_name_is_the_application_title(self):
+        cursor = FakeCursor(count=1, records=[(1, "a")])
+
+        with tempfile.TemporaryDirectory() as folder:
+            result = self.load(cursor, download=True, folder=folder + "/",
+                               es=FakeAppES(title="Ventes été (2026)"))
+
+            self.assertRegex(os.path.basename(result["file"]),
+                             r"^Ventes_ete_2026_\d{8}-\d{4}_[0-9a-f]{6}\.csv$")
+
+    def test_an_application_without_a_title_keeps_its_id(self):
+        cursor = FakeCursor(count=1, records=[(1, "a")])
+
+        with tempfile.TemporaryDirectory() as folder:
+            result = self.load(cursor, download=True, folder=folder + "/",
+                               es=FakeAppES(title=None))
+
+            self.assertRegex(os.path.basename(result["file"]),
+                             r"^app-1_\d{8}-\d{4}_[0-9a-f]{6}\.csv$")
 
     def test_an_export_above_five_thousand_rows_is_delegated(self):
         records = [(position, "n%d" % position) for position in range(5001)]

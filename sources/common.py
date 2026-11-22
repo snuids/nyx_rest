@@ -1,5 +1,4 @@
 import json
-import uuid
 import pytz
 import tzlocal
 import logging
@@ -10,6 +9,8 @@ from datetime import timedelta
 from opensearchpy.client import IndicesClient
 
 from cachetools import cached, LRUCache, TTLCache
+
+from lib.exportnames import export_name
 
 
 @cached(cache=TTLCache(maxsize=1024, ttl=300))
@@ -255,7 +256,7 @@ def loadData(es,conn,index,data,doc_type,download,cui,is_rest_api,user,outputfor
 
     cleanrecs=cleanElasticRecords({"hits":{"hits":hits}})
     
-    outputname="export_"+str(uuid.uuid4())+'.'+outputformat
+    outputname=export_name(index,outputformat)
     url=OUTPUT_URL+outputname
 
     df=pd.DataFrame(cleanrecs)
@@ -424,7 +425,7 @@ def kibanaData(es,conn,matchrequest,user,outputformat,is_rest_api,OUTPUT_URL,OUT
             pds.append(res)
     dataframetime=int(datetime.now().timestamp()*1000)
 
-    outputname="export_"+str(uuid.uuid4())+'.'+outputformat
+    outputname=export_name("dashboard",outputformat)
     url=OUTPUT_URL+outputname
     outputpath=OUTPUT_FOLDER+outputname
 
