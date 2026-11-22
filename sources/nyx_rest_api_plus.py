@@ -231,6 +231,25 @@ v3.22.39 16/Nov/2026 Two operators no longer overwrite each other in silence
   returns the version it produced, so a screen
   that saves twice — an inline cell edit — does not get a 409 from the bump of its own first write.
   **659 tests**, coverage 82 %.
+
+v3.22.40 22/Nov/2026 A download is named after what it contains
+  Every table export was written as `export_<uuid4>.<ext>`: no table, no date, nothing to tell two
+  exports of the same screen apart once on disk. One user's file began with `export_bad…`, which is
+  what the first three hex digits of a random uuid look like — a one-in-4096 coincidence, and the
+  whole of what the name said.
+  `lib/exportnames.py` builds it instead: the index (`sites-2026.11`), the SQL application's title
+  (`EnergyVolsem`, its id when it has none) or the fixed `dashboard` for a Grafana export, then the
+  minute and six random hex digits (`sites-2026.11_20261122-1326_a1b2c3.xlsx`). Three reasons the
+  name cannot be free text: it is also the URL the console opens (`window.open`, `#` would truncate
+  it as a fragment, `?` opens a query, `%` breaks decoding), it is the file name a static nginx
+  serves — there is no `Content-Disposition` to override the display — and it is written on someone
+  else's machine, where the rules are the client's. So: `[A-Za-z0-9._-]` only (accents folded,
+  everything else `_`), the stem cut at 80 characters — `NAME_MAX` is 255 bytes and the longest
+  index of this cluster is 66 — the Windows-reserved stems prefixed, a short random suffix that
+  makes truncation and two exports in the same minute harmless, and the extension taken from a
+  whitelist (`csv`, `xlsx`) instead of the request.
+  `tests/test_exportnames.py` holds the maker on its own (12 cases); the three call sites are pinned
+  in `tests/test_shared_helpers.py` and `tests/test_pg_data.py`. **673 tests**, coverage 82 %.
 """
 
 import json

@@ -1,6 +1,5 @@
 import os
 import json
-import uuid
 import pytz
 import tzlocal
 import logging
@@ -17,6 +16,7 @@ from datetime import timedelta
 from cachetools import cached, LRUCache, TTLCache
 from config import settings
 from lib.pg_search import bind_filter, page_values, sort_clause
+from lib.exportnames import export_name
 
 sql_server_connections={}
 
@@ -344,7 +344,7 @@ def loadPGData(es,appid,pgconn,conn,data,download,is_rest_api,user,outputformat,
 
 #     cleanrecs=cleanElasticRecords(res)
     
-    outputname="export_"+str(uuid.uuid4())+'.'+outputformat
+    outputname=export_name(app["_source"].get("title") or appid,outputformat)
     url=OUTPUT_URL+outputname
 
     df=pd.DataFrame(hits)

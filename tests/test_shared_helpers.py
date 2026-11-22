@@ -537,7 +537,10 @@ class LoadDataTests(unittest.TestCase):
             )
 
             self.assertEqual(result["type"], "direct")
-            self.assertTrue(result["url"].startswith("https://energy.example/generated/export_"))
+            self.assertTrue(result["url"].startswith("https://energy.example/generated/idx_"),
+                            "the file is named after the index it exports")
+            self.assertRegex(os.path.basename(result["file"]),
+                             r"^idx_\d{8}-\d{4}_[0-9a-f]{6}\.csv$")
             self.assertTrue(os.path.isfile(result["file"]))
             with open(result["file"], encoding="utf8") as handle:
                 self.assertIn("title", handle.readline())
