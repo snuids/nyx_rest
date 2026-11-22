@@ -250,6 +250,15 @@ v3.22.40 22/Nov/2026 A download is named after what it contains
   whitelist (`csv`, `xlsx`) instead of the request.
   `tests/test_exportnames.py` holds the maker on its own (12 cases); the three call sites are pinned
   in `tests/test_shared_helpers.py` and `tests/test_pg_data.py`. **673 tests**, coverage 82 %.
+
+v3.22.41 22/Nov/2026 The export worker no longer logs the password hash
+  `account_behind()` returns the `nyx_user` record of the account behind an export request, and
+  `remoteLoadData()` logs the message it receives — record included. Every delegated export (above
+  5000 rows, 3000 for a dashboard) therefore wrote the account's `pbkdf2` hash and its phone number
+  into `docker logs` and into the rotated log files on disk. Neither is used: the rights come from
+  `may_export`, the mail is addressed to `user['id']`, the greeting to firstname/lastname. Both
+  fields are dropped where the record is read, so nothing downstream can log them again.
+  **674 tests**, coverage 82 %.
 """
 
 import json

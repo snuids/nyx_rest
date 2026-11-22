@@ -141,6 +141,11 @@ def account_behind(mes):
         return None
     user = dict(record.get("_source") or {})
     user["id"] = record.get("_id", user_id)
+    # `remoteLoadData` logs the message it is handed, user record included, and this worker needs
+    # nothing of the account beyond its rights and its address: the password hash and the phone
+    # number used to travel to `docker logs` (and into the log files on disk) on every export.
+    user.pop("password", None)
+    user.pop("phone", None)
     return user
 
 
