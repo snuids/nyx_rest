@@ -49,6 +49,8 @@ def tearDownModule():
 ALICE = {"id": "alice@example.com", "_id": "alice@example.com", "_source": {
     "id": "alice@example.com", "firstname": "Alice", "lastname": "Marchand",
     "privileges": ["admin"], "login": "alice",
+    "password": "$pbkdf2-sha256$29000$ZYzxXotxzhnDmDOmlJLS.g$gUinev6pk8c5kFSF4u5rLjKDusoy/3xt/jz5Y6Ca06M",
+    "phone": "0032497441962",
 }}
 
 
@@ -114,6 +116,21 @@ class AccountBehindTests(HelperTestCase):
 
         self.assertIsNone(helper.account_behind({"user": {"id": "alice@example.com"}}))
 
+    def test_the_password_hash_and_the_phone_stay_in_the_cluster(self):
+        """`remoteLoadData` logs the message it receives, user record included.
+
+        The hash of the password and the phone number travelled to `docker logs` and to the log
+        files on disk on every delegated export. Nothing here needs them: the rights are checked
+        with `may_export`, the mail goes to `user['id']`.
+        """
+        self.cluster()
+
+        user = helper.account_behind({"user": {"id": "alice@example.com"}})
+
+        self.assertNotIn("password", user)
+        self.assertNotIn("phone", user)
+        self.assertEqual(user["firstname"], "Alice", "the rest of the record is kept")
+
 
 class MessageDispatchTests(HelperTestCase):
     def message(self, **fields):
@@ -149,6 +166,8 @@ class MessageDispatchTests(HelperTestCase):
         message = load.call_args.args[0]
         self.assertEqual(message["user"]["id"], "alice@example.com",
                          "the recipient is the account of the cluster, not the one claimed")
+        self.assertNotIn("password", message["user"],
+                         "the export message is logged whole: the hash must not be in it")
         mail.assert_called_once_with(task, message)
 
     def test_a_sql_export_is_refused_for_an_unknown_account(self):
